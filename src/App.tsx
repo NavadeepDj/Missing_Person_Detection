@@ -6,8 +6,10 @@ import { PlaceholderPage } from '@/components/PlaceholderPage';
 import { LandingPage } from '@/pages/LandingPage';
 import { CasesPage } from '@/pages/CasesPage';
 import { AlertsPage } from '@/pages/AlertsPage';
+import { DetectionPage } from '@/pages/DetectionPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { SignupPage } from '@/pages/SignupPage';
+import { HelpSupportPage } from '@/pages/HelpSupportPage';
 import './App.css';
 
 function App() {
@@ -36,6 +38,12 @@ function App() {
           <Route path="/alerts" element={
             <ProtectedRoute>
               <AlertsPage />
+            </ProtectedRoute>
+          } />
+          
+          <Route path="/detection" element={
+            <ProtectedRoute>
+              <DetectionPage />
             </ProtectedRoute>
           } />
           
@@ -136,14 +144,7 @@ function App() {
           
           <Route path="/help" element={
             <ProtectedRoute>
-              <PlaceholderPage 
-                title="Help & Support"
-                description="Documentation, FAQs, and support resources"
-                breadcrumbs={[
-                  { title: 'Dashboard', href: '/dashboard' },
-                  { title: 'Help' }
-                ]}
-              />
+              <HelpSupportPage />
             </ProtectedRoute>
           } />
         </Routes>
