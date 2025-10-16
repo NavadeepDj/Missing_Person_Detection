@@ -6,6 +6,15 @@ export interface User {
   organization?: string;
 }
 
+export interface FacePhoto {
+  id: string;
+  personId: string;
+  photoUrl: string;
+  embedding: number[];
+  confidence: number;
+  createdAt: string;
+}
+
 export interface MissingPerson {
   id: string;
   name: string;
@@ -19,6 +28,13 @@ export interface MissingPerson {
   dateReported: string;
   caseNumber: string;
   reportedBy: string;
+  // AI Detection fields
+  faceEmbedding?: number[];
+  facePhotos: FacePhoto[];
+  detectionSettings?: {
+    minSimilarity: number;
+    activeAlerts: boolean;
+  };
 }
 
 export interface Alert {

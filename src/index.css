@@ -118,3 +118,12 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Webcam mirror effect for natural camera experience */
+.mirror-video {
+  transform: scaleX(-1);
+  -webkit-transform: scaleX(-1);
+  -moz-transform: scaleX(-1);
+  -ms-transform: scaleX(-1);
+  -o-transform: scaleX(-1);
+}
