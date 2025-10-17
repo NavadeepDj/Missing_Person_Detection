@@ -1,11 +1,23 @@
 // Enhanced photo upload component with webcam support and real AI processing
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Upload, X, Camera, CheckCircle, AlertCircle, Brain, Database, Search } from 'lucide-react';
+import { Upload, X, Camera, CheckCircle, AlertCircle, Brain, Database, Search, MapPin, Navigation } from 'lucide-react';
 import { FaceProcessingService } from '@/services/FaceProcessingService';
 import { FaceEmbeddingModal } from './FaceEmbeddingModal';
 import { SupabaseTest } from '@/utils/SupabaseTest';
+import exifr from 'exifr';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+// Fix Leaflet default marker icons
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+});
 
 interface SimplePhotoUploadProps {
   onPhotoSelect: (photoUrl: string, aiProcessed?: boolean) => void;
@@ -20,6 +32,13 @@ interface ProcessedPhoto {
   caseId?: string;
   embeddingId?: string;
   faceDetected?: boolean;
+  exifData?: {
+    latitude?: number;
+    longitude?: number;
+    timestamp?: string;
+    camera?: string;
+    address?: string;
+  };
 }
 
 export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoUploadProps) {
@@ -260,6 +279,9 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
       const result = await FaceProcessingService.processAndStoreFaceEmbedding(photoUrl, caseId);
 
       if (result.success) {
+        // Extract EXIF data in parallel
+        const exifDataPromise = extractExifData(photoUrl);
+        
         // Update AI statistics
         setAiStats(prev => ({
           ...prev,
@@ -271,6 +293,9 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
         setProcessingStage('complete');
         setProcessingStatus('✅ Face embedding generated and stored in database!');
 
+        // Wait for EXIF data
+        const exifData = await exifDataPromise;
+
         // Add processed photo to state
         const processedPhoto: ProcessedPhoto = {
           url: photoUrl,
@@ -278,7 +303,8 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
           embeddingId: result.embeddingId,
           confidence: result.confidence,
           processingTime: result.processingTime,
-          faceDetected: true
+          faceDetected: true,
+          exifData: exifData || undefined
         };
 
         setPhotos(prev => [...prev, processedPhoto]);
@@ -316,6 +342,65 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
 
   const removePhoto = (index: number) => {
     setPhotos(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Extract EXIF data from photo
+  const extractExifData = async (photoUrl: string) => {
+    try {
+      console.log('📍 Extracting EXIF data from photo...');
+      
+      // Convert data URL to blob
+      const response = await fetch(photoUrl);
+      const blob = await response.blob();
+      
+      // Extract EXIF data
+      const exif = await exifr.parse(blob, {
+        gps: true,
+        tiff: true,
+        exif: true,
+      });
+      
+      if (!exif) {
+        console.log('ℹ️ No EXIF data found in image');
+        return null;
+      }
+      
+      console.log('✅ EXIF data extracted:', exif);
+      
+      const exifData: ProcessedPhoto['exifData'] = {};
+      
+      // Extract GPS coordinates
+      if (exif.latitude && exif.longitude) {
+        exifData.latitude = exif.latitude;
+        exifData.longitude = exif.longitude;
+        
+        // Fetch address from OpenStreetMap Nominatim API
+        try {
+          const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${exif.latitude}&lon=${exif.longitude}`;
+          const addressResponse = await fetch(nominatimUrl);
+          const addressData = await addressResponse.json();
+          exifData.address = addressData.display_name || 'Address not found';
+          console.log('📍 Location resolved:', exifData.address);
+        } catch (error) {
+          console.error('Error fetching address:', error);
+        }
+      }
+      
+      // Extract timestamp
+      if (exif.DateTimeOriginal || exif.DateTime) {
+        exifData.timestamp = (exif.DateTimeOriginal || exif.DateTime).toISOString();
+      }
+      
+      // Extract camera info
+      if (exif.Make || exif.Model) {
+        exifData.camera = `${exif.Make || ''} ${exif.Model || ''}`.trim();
+      }
+      
+      return exifData;
+    } catch (error) {
+      console.error('❌ Error extracting EXIF data:', error);
+      return null;
+    }
   };
 
   const testSupabaseConnection = async () => {
@@ -556,6 +641,12 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
                               <span className="text-sm font-medium text-red-700">Processing Failed</span>
                             </>
                           )}
+                          {photo.exifData?.latitude && photo.exifData?.longitude && (
+                            <div className="flex items-center space-x-1 ml-2 bg-orange-50 px-2 py-0.5 rounded">
+                              <MapPin className="h-3 w-3 text-orange-600" />
+                              <span className="text-xs text-orange-700">GPS</span>
+                            </div>
+                          )}
                         </div>
                         <Button
                           variant="ghost"
@@ -592,6 +683,86 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
                               <span className="font-medium text-gray-900">
                                 {photo.processingTime.toFixed(0)}ms
                               </span>
+                            </div>
+                          )}
+
+                          {/* EXIF Data - Location */}
+                          {photo.exifData?.latitude && photo.exifData?.longitude && (
+                            <div className="mt-3 pt-3 border-t border-gray-200">
+                              <div className="flex items-center space-x-1 mb-2">
+                                <MapPin className="h-3 w-3 text-orange-600" />
+                                <span className="text-xs font-semibold text-orange-900">Photo Location</span>
+                              </div>
+                              
+                              {/* Map */}
+                              <div className="h-32 rounded-md overflow-hidden border border-gray-300 mb-2">
+                                <MapContainer
+                                  center={[photo.exifData.latitude, photo.exifData.longitude]}
+                                  zoom={15}
+                                  style={{ height: '100%', width: '100%' }}
+                                  zoomControl={false}
+                                  attributionControl={false}
+                                >
+                                  <TileLayer
+                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                  />
+                                  <Marker position={[photo.exifData.latitude, photo.exifData.longitude]}>
+                                    <Popup>
+                                      Photo taken here
+                                    </Popup>
+                                  </Marker>
+                                </MapContainer>
+                              </div>
+                              
+                              {/* Location Details */}
+                              <div className="space-y-1">
+                                <div className="flex items-start space-x-1">
+                                  <Navigation className="h-3 w-3 text-gray-400 mt-0.5 flex-shrink-0" />
+                                  <span className="text-xs text-gray-600 leading-tight font-mono">
+                                    {photo.exifData.latitude}, {photo.exifData.longitude}
+                                  </span>
+                                </div>
+                                
+                                {photo.exifData.address && (
+                                  <div className="text-xs text-gray-700 leading-tight pl-4">
+                                    {photo.exifData.address}
+                                  </div>
+                                )}
+                                
+                                <a
+                                  href={`https://www.openstreetmap.org/?mlat=${photo.exifData.latitude}&mlon=${photo.exifData.longitude}#map=15/${photo.exifData.latitude}/${photo.exifData.longitude}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-blue-600 hover:underline inline-flex items-center space-x-1 pl-4"
+                                >
+                                  <span>View on OpenStreetMap</span>
+                                  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                  </svg>
+                                </a>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* EXIF Data - Other Info */}
+                          {(photo.exifData?.timestamp || photo.exifData?.camera) && (
+                            <div className="mt-2 pt-2 border-t border-gray-200 space-y-1">
+                              {photo.exifData.timestamp && (
+                                <div className="flex items-center justify-between">
+                                  <span className="text-gray-600">Captured:</span>
+                                  <span className="font-medium text-gray-900">
+                                    {new Date(photo.exifData.timestamp).toLocaleString()}
+                                  </span>
+                                </div>
+                              )}
+                              {photo.exifData.camera && (
+                                <div className="flex items-center justify-between">
+                                  <span className="text-gray-600">Camera:</span>
+                                  <span className="font-medium text-gray-900 truncate max-w-[150px]" title={photo.exifData.camera}>
+                                    {photo.exifData.camera}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           )}
 
@@ -656,43 +827,45 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
                     <div className="text-gray-600">Avg Confidence</div>
                   </div>
                   <div className="text-center">
-                    <div className={`text-2xl font-bold ${aiStats.databaseConnected ? 'text-green-600' : 'text-red-600'}`}>
-                      {aiStats.databaseConnected ? '✓' : '✗'}
+                    <div className="text-2xl font-bold text-orange-600">
+                      {photos.filter(p => p.exifData?.latitude).length}
                     </div>
-                    <div className="text-gray-600">Database</div>
+                    <div className="text-gray-600">GPS Data</div>
                   </div>
                 </div>
 
-                <div className="mt-3 flex items-center justify-between">
+                <div className="mt-3 flex items-center justify-between flex-wrap gap-2">
                   <div className="text-xs text-blue-700">
                     <Database className="h-3 w-3 inline mr-1" />
-                    Embeddings stored in Supabase for real-time matching
+                    Embeddings stored • GPS locations extracted
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-xs h-6"
-                    onClick={async () => {
-                      try {
-                        const stats = await FaceProcessingService.getDatabaseStatistics();
-                        console.log('Database Statistics:', stats);
-                        alert(`Database Stats:\nTotal Embeddings: ${stats.totalEmbeddings}\nStorage Used: ~${(stats.storageUsed / 1024).toFixed(2)} KB`);
-                      } catch (error) {
-                        console.error('Error getting database stats:', error);
-                        alert('Error: Could not fetch database statistics');
-                      }
-                    }}
-                  >
-                    View DB Stats
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-xs h-6 ml-2"
-                    onClick={testSupabaseConnection}
-                  >
-                    Test Supabase
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs h-6"
+                      onClick={async () => {
+                        try {
+                          const stats = await FaceProcessingService.getDatabaseStatistics();
+                          console.log('Database Statistics:', stats);
+                          alert(`Database Stats:\nTotal Embeddings: ${stats.totalEmbeddings}\nStorage Used: ~${(stats.storageUsed / 1024).toFixed(2)} KB`);
+                        } catch (error) {
+                          console.error('Error getting database stats:', error);
+                          alert('Error: Could not fetch database statistics');
+                        }
+                      }}
+                    >
+                      View DB Stats
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs h-6"
+                      onClick={testSupabaseConnection}
+                    >
+                      Test Supabase
+                    </Button>
+                  </div>
                 </div>
               </div>
 
@@ -715,14 +888,16 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
       </CardContent>
 
       {/* Face Embedding Details Modal */}
-      <FaceEmbeddingModal
-        photo={selectedPhoto}
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setSelectedPhoto(null);
-        }}
-      />
+      {selectedPhoto && (
+        <FaceEmbeddingModal
+          photo={selectedPhoto}
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false);
+            setSelectedPhoto(null);
+          }}
+        />
+      )}
     </Card>
   );
 }
