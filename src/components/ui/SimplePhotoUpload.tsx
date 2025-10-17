@@ -50,6 +50,9 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
 
   // Initialize AI services on component mount
   useEffect(() => {
+    // Clear any potentially stale photos on mount
+    setPhotos([]);
+    
     const initializeAI = async () => {
       try {
         console.log('🧠 Initializing AI services...');
@@ -129,9 +132,8 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
     const reader = new FileReader();
     reader.onload = async (e) => {
       const photoUrl = e.target?.result as string;
-      setPhotos(prev => [...prev, photoUrl]);
-
-      // Trigger AI processing
+      
+      // Don't add to photos array yet - let processPhotoWithAI handle it
       await processPhotoWithAI(photoUrl);
     };
     reader.readAsDataURL(file);
@@ -223,12 +225,11 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
         context.drawImage(videoRef.current, 0, 0);
 
         const photoUrl = canvasRef.current.toDataURL('image/jpeg');
-        setPhotos(prev => [...prev, photoUrl]);
-
+        
         // Stop webcam after capture
         stopWebcam();
 
-        // Trigger AI processing
+        // Trigger AI processing - let it handle adding to photos array
         processPhotoWithAI(photoUrl);
       }
     }
@@ -236,6 +237,12 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
 
   // Real AI Processing with face detection and embedding generation
   const processPhotoWithAI = async (photoUrl: string) => {
+    // Validate photoUrl before processing
+    if (!photoUrl || !photoUrl.startsWith('data:image/')) {
+      console.error('❌ Invalid photo URL provided:', photoUrl);
+      return;
+    }
+
     setIsProcessing(true);
     setProcessingStage('detection');
     setProcessingStatus('🔍 Detecting faces in photo...');
@@ -294,14 +301,9 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
       setProcessingStage('error');
       setProcessingStatus(`❌ Processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
 
-      // Still add the photo to the gallery but mark as failed
-      const failedPhoto: ProcessedPhoto = {
-        url: photoUrl,
-        faceDetected: false
-      };
-
-      setPhotos(prev => [...prev, failedPhoto]);
-      onPhotoSelect(photoUrl, false);
+      // Don't add failed photos to the gallery - just show error message
+      // User can try uploading again
+      console.log('⚠️ Photo not added to gallery due to processing failure');
     } finally {
       // Reset processing state after a delay
       setTimeout(() => {
@@ -387,22 +389,22 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
             className="hidden"
           />
 
-          {/* Debug Info */}
-          <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
-            Debug: isWebcamActive={String(isWebcamActive)}, photos={photos.length}, isProcessing={String(isProcessing)}
-          </div>
-
-          {/* Webcam View */}
+          {/* Hidden canvas for webcam capture */}
+          <canvas ref={canvasRef} className="hidden" />
+          
+          {/* Webcam View - single video element, conditionally displayed */}
           {isWebcamActive && (
             <div className="border-2 border-blue-300 rounded-lg p-4 bg-blue-50">
               <div className="relative">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-64 object-cover rounded-lg bg-black mirror-video"
-                />
+                <div className="w-full h-64 bg-black rounded-lg overflow-hidden">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover mirror-video"
+                  />
+                </div>
                 <div className="absolute top-2 right-2">
                   <div className="flex items-center space-x-2 bg-red-600 text-white px-3 py-1 rounded-full">
                     <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
@@ -420,6 +422,17 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
                 </Button>
               </div>
             </div>
+          )}
+          
+          {/* Keep video element mounted but hidden when not in use */}
+          {!isWebcamActive && (
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              style={{ display: 'none' }}
+            />
           )}
 
           {/* AI Processing Status */}
@@ -698,9 +711,6 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
               </div>
             </div>
           )}
-
-          {/* Hidden canvas for webcam capture */}
-          <canvas ref={canvasRef} className="hidden" />
         </div>
       </CardContent>
 
