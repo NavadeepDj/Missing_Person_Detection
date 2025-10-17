@@ -33,10 +33,6 @@ export class DatabaseService {
     }
   }
 
-  private getStorageKey(key: string): string {
-    return `tracevision_${key}`;
-  }
-
   /**
    * Store face embedding for a case in the database
    */

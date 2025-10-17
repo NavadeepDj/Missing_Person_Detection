@@ -23,7 +23,6 @@ import {
   Shield,
   Settings,
   Camera,
-  MapPin,
   BarChart3
 } from 'lucide-react';
 import { motion } from 'framer-motion';

@@ -10,16 +10,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Search, Eye, Edit, Brain, Camera, User, Calendar, MapPin } from 'lucide-react';
+import { Plus, Search, Eye, Edit, Brain, Camera, User, MapPin } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { FacePhotoUpload } from '@/components/ui/FacePhotoUpload';
-import { MissingPerson, FacePhoto } from '@/types';
+import type { MissingPerson, FacePhoto } from '@/types';
 import { CacheService } from '@/services/database/CacheService';
 
 export function CaseManagementPage() {
   const [cases, setCases] = useState<MissingPerson[]>([]);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [selectedCase, setSelectedCase] = useState<MissingPerson | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
@@ -62,7 +61,7 @@ export function CaseManagementPage() {
       dateReported: new Date().toISOString().split('T')[0],
       caseNumber: `CASE-${Date.now()}`,
       reportedBy: newCase.reportedBy,
-      facePhotos,
+      facePhotos: facePhotos.length > 0 ? facePhotos : undefined,
       detectionSettings: {
         minSimilarity: 0.75,
         activeAlerts: true
@@ -73,9 +72,8 @@ export function CaseManagementPage() {
     setCases(prev => [caseData, ...prev]);
     CacheService.saveMissingPersons([caseData, ...cases]);
 
-    // Save face photos and embeddings
+    // Save embeddings
     facePhotos.forEach(photo => {
-      CacheService.addFacePhoto(photo);
       CacheService.addEmbedding({
         personId: caseData.id,
         embedding: photo.embedding,
@@ -278,7 +276,6 @@ export function CaseManagementPage() {
                   <FacePhotoUpload
                     personId="temp-new-case"
                     onPhotoAdd={handlePhotoAdd}
-                    maxPhotos={3}
                   />
                   <p className="text-xs text-gray-500">
                     Upload clear front-facing photos. AI will generate facial embeddings for automatic matching.

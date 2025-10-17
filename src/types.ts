@@ -3,7 +3,16 @@ export interface User {
   name: string;
   email: string;
   role: 'admin' | 'case_manager' | 'investigator';
-  organization: string;
+  organization?: string;
+}
+
+export interface FacePhoto {
+  id: string;
+  personId: string;
+  photoUrl: string;
+  embedding: number[];
+  confidence: number;
+  createdAt: string;
 }
 
 export interface MissingPerson {
@@ -19,6 +28,13 @@ export interface MissingPerson {
   dateReported: string;
   caseNumber: string;
   reportedBy: string;
+  // AI Detection fields
+  faceEmbedding?: number[];
+  facePhotos?: FacePhoto[];
+  detectionSettings?: {
+    minSimilarity: number;
+    activeAlerts: boolean;
+  };
 }
 
 export interface Alert {
