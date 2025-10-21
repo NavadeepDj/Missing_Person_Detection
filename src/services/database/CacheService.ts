@@ -1,11 +1,10 @@
 // Local storage service for offline functionality and caching
 // Provides fallback when Supabase is not available
 
-import { MissingPerson, FacePhoto, Alert } from '@/types';
+import type { MissingPerson, Alert } from '@/types';
 
 export interface CacheData {
   missingPersons: MissingPerson[];
-  facePhotos: FacePhoto[];
   alerts: Alert[];
   embeddings: Array<{
     personId: string;
@@ -52,7 +51,7 @@ export class CacheService {
         return {};
       }
 
-      console.log(`📂 Loaded ${data.missingPersons?.length || 0} missing persons from cache`);
+      console.log('📂 Cache loaded successfully');
       return data;
     } catch (error) {
       console.error('❌ Error loading cache:', error);
@@ -96,21 +95,7 @@ export class CacheService {
     }
   }
 
-  // Face Photos operations
-  static saveFacePhotos(photos: FacePhoto[]): void {
-    this.save({ facePhotos: photos });
-  }
 
-  static getFacePhotos(): FacePhoto[] {
-    const cache = this.load();
-    return cache.facePhotos || [];
-  }
-
-  static addFacePhoto(photo: FacePhoto): void {
-    const photos = this.getFacePhotos();
-    photos.push(photo);
-    this.saveFacePhotos(photos);
-  }
 
   // Embeddings operations
   static saveEmbeddings(embeddings: Array<{
@@ -145,21 +130,17 @@ export class CacheService {
     id: string;
     name: string;
     embedding: number[];
-    photoUrl?: string;
   }> {
     const persons = this.getMissingPersons();
-    const photos = this.getFacePhotos();
     const embeddings = this.getEmbeddings();
 
     return embeddings.map(embedding => {
       const person = persons.find(p => p.id === embedding.personId);
-      const photo = photos.find(p => p.id === embedding.photoId);
 
       return {
         id: embedding.personId,
         name: person?.name || 'Unknown',
-        embedding: embedding.embedding,
-        photoUrl: photo?.photoUrl
+        embedding: embedding.embedding
       };
     }).filter(item => item.name !== 'Unknown');
   }
@@ -193,7 +174,6 @@ export class CacheService {
   static getCacheStats(): {
     size: string;
     missingPersonsCount: number;
-    facePhotosCount: number;
     embeddingsCount: number;
     alertsCount: number;
     lastSync: string | null;
@@ -204,7 +184,6 @@ export class CacheService {
     return {
       size: this.formatBytes(new Blob([cacheString]).size),
       missingPersonsCount: cache.missingPersons?.length || 0,
-      facePhotosCount: cache.facePhotos?.length || 0,
       embeddingsCount: cache.embeddings?.length || 0,
       alertsCount: cache.alerts?.length || 0,
       lastSync: cache.lastSync || null

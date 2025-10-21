@@ -127,3 +127,17 @@
   -ms-transform: scaleX(-1);
   -o-transform: scaleX(-1);
 }
+
+/* Leaflet map container fix */
+.leaflet-container {
+  font-family: inherit;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 4px;
+}
+
+.leaflet-popup-content {
+  margin: 8px 12px;
+  font-size: 12px;
+}
