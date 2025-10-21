@@ -98,7 +98,7 @@ export class FaceEmbeddingService {
         id: `face_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         caseId,
         embedding,
-        confidence: face.score || 0.8,
+        confidence: 0.8, // Default confidence since Face type doesn't have score property
         createdAt: new Date().toISOString(),
       };
 

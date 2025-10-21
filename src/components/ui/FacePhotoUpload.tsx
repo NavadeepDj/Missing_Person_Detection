@@ -7,19 +7,17 @@ import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { FaceDetectionService, type DetectedFace } from '@/services/faceRecognition/FaceDetectionService';
 import { EmbeddingService, type EmbeddingResult } from '@/services/faceRecognition/EmbeddingService';
-import { FacePhoto } from '@/types';
+import type { FacePhoto } from '@/types';
 
 interface FacePhotoUploadProps {
   personId: string;
   onPhotoAdd: (photo: FacePhoto) => void;
-  maxPhotos?: number;
   className?: string;
 }
 
 export function FacePhotoUpload({
   personId,
   onPhotoAdd,
-  maxPhotos = 5,
   className
 }: FacePhotoUploadProps) {
   const [isProcessing, setIsProcessing] = useState(false);

@@ -10,5 +10,32 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
-  }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'ui-vendor': ['framer-motion', 'lucide-react'],
+          'tensorflow': ['@tensorflow/tfjs', '@tensorflow/tfjs-converter', '@tensorflow-models/face-detection'],
+        },
+      },
+    },
+    // Optimize build for Vercel
+    chunkSizeWarningLimit: 1000,
+    sourcemap: false,
+    minify: 'esbuild',
+  },
+  // Optimize dependencies
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      'react-router-dom',
+      '@tensorflow/tfjs',
+      '@tensorflow/tfjs-converter',
+      '@tensorflow-models/face-detection',
+    ],
+    exclude: ['@tensorflow/tfjs-backend-webgl'],
+  },
 })

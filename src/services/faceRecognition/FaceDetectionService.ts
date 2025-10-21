@@ -19,7 +19,6 @@ export interface FaceDetectionResult {
 }
 
 export class FaceDetectionService {
-  private static faceDetector: any = null;
   private static modelLoaded = false;
 
   // Initialize face detection model
@@ -159,7 +158,6 @@ export class FaceDetectionService {
 
   // Dispose resources
   static dispose(): void {
-    this.faceDetector = null;
     this.modelLoaded = false;
   }
 }
