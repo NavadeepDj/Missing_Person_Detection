@@ -30,7 +30,7 @@ export interface MissingPerson {
   reportedBy: string;
   // AI Detection fields
   faceEmbedding?: number[];
-  facePhotos: FacePhoto[];
+  facePhotos?: FacePhoto[];
   detectionSettings?: {
     minSimilarity: number;
     activeAlerts: boolean;
