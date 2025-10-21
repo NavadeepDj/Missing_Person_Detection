@@ -33,10 +33,6 @@ export class DatabaseService {
     }
   }
 
-  private getStorageKey(key: string): string {
-    return `tracevision_${key}`;
-  }
-
   /**
    * Store face embedding for a case in the database
    */
@@ -102,7 +98,10 @@ export class DatabaseService {
     };
   }
 
-  
+
+
+
+
   /**
    * Retrieve all face embeddings from the database
    */
@@ -153,7 +152,10 @@ export class DatabaseService {
     return embeddings;
   }
 
-  
+
+
+
+
   /**
    * Retrieve face embedding for a specific case
    */
@@ -353,13 +355,15 @@ export class DatabaseService {
     storageUsed: number;
   }> {
     try {
-      console.log('📊 Getting storage statistics from real Supabase...');
+      console.log('📊 Getting storage statistics...');
       return await this.getSupabaseStats();
     } catch (error) {
       console.error('❌ Error getting storage stats:', error);
       throw error;
     }
   }
+
+
 
   private async getSupabaseStats(): Promise<{
     totalEmbeddings: number;
@@ -392,6 +396,8 @@ export class DatabaseService {
     console.log('✅ Supabase statistics:', stats);
     return stats;
   }
+
+
 }
 
 // Singleton instance

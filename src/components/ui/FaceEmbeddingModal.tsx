@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { X, Copy, Eye, EyeOff, Database, Brain, Calendar, Clock, Hash } from 'lucide-react';
+import { X, Copy, Eye, EyeOff, Database, Brain, Clock, Hash } from 'lucide-react';
 
 interface ProcessedPhoto {
   url: string;
@@ -30,10 +29,6 @@ export function FaceEmbeddingModal({ photo, isOpen, onClose }: FaceEmbeddingModa
     navigator.clipboard.writeText(text);
     setCopiedText(label);
     setTimeout(() => setCopiedText(''), 2000);
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
   };
 
   const formatEmbeddingValue = (value: number) => {

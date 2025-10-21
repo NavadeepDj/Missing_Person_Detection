@@ -1,6 +1,5 @@
 import { FaceDetectionService } from './faceRecognition/FaceDetectionService';
 import { EmbeddingService } from './faceRecognition/EmbeddingService';
-import { MatchingService } from './faceRecognition/MatchingService';
 import { databaseService } from './DatabaseService';
 
 export interface ProcessedImageResult {
