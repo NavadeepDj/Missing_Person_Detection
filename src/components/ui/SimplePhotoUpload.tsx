@@ -299,12 +299,14 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
     setProcessingStatus('🔍 Detecting faces in photo...');
 
     try {
-      // Generate human-friendly case ID: Name-Date(Y/M/day)-Timestamp
+      // Generate human-friendly case ID: CASE-FirstName-YYYYMMDD-RANDOM
       const today = new Date();
-      const datePart = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
-      const namePart = (caseName || 'Unknown').trim().replace(/\s+/g, '-');
-      const timestamp = today.getTime();
-      const caseId = `${namePart}-${datePart}-${timestamp}`;
+      const datePart = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+      const firstNameRaw = (caseName || 'Unknown').trim().split(/\s+/)[0] || 'Unknown';
+      const firstName = firstNameRaw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const timestamp = Date.now().toString();
+      // const caseId = `${firstName}-${datePart}-${timestamp}`;
+      const caseId = `${firstName}-${datePart}`;
 
       // Prepare case metadata
       const parsedAge = caseAge ? Number(caseAge) : undefined;
@@ -401,7 +403,6 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
   const removePhoto = (index: number) => {
     setPhotos(prev => prev.filter((_, i) => i !== index));
   };
-
   // Extract EXIF data from photo
   const extractExifData = async (photoUrl: string) => {
     try {
@@ -479,7 +480,7 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
   };
 
   return (
-    <Card className="w-full">
+    <Card className="w-full" >
       <CardContent className="p-4">
         <div className="space-y-4">
           {/* Case Details Form */}
@@ -601,111 +602,257 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
                     autoPlay
                     playsInline
                     muted
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover mirror-video"
                   />
                 </div>
-                <Button
-                  onClick={capturePhoto}
-                  className="absolute bottom-4 left-1/2 transform -translate-x-1/2 rounded-full w-12 h-12 p-0 border-4 border-white"
-                  variant="destructive"
-                >
-                  <span className="sr-only">Capture</span>
-                </Button>
-                <Button
-                  onClick={stopWebcam}
-                  className="absolute top-2 right-2 rounded-full w-8 h-8 p-0 bg-gray-800/50 hover:bg-gray-800/70"
-                  variant="ghost"
-                >
-                  <X className="h-4 w-4 text-white" />
-                </Button>
-              </div>
-              <p className="text-center text-sm text-blue-800 mt-2">
-                Position face in center and ensure good lighting
-              </p>
-            </div>
-          )}
-
-          {/* Processing Status */}
-          {isProcessing && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 animate-pulse">
-              <div className="flex items-center space-x-3">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-                <div>
-                  <p className="text-sm font-medium text-blue-900">{processingStatus}</p>
-                  <p className="text-xs text-blue-700 mt-1">
-                    Stage: {processingStage.charAt(0).toUpperCase() + processingStage.slice(1)}
-                  </p>
+                <div className="absolute top-2 right-2">
+                  <div className="flex items-center space-x-2 bg-red-600 text-white px-3 py-1 rounded-full">
+                    <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                    <span className="text-sm font-medium">LIVE</span>
+                  </div>
                 </div>
               </div>
+              <div className="flex justify-center mt-4 space-x-2">
+                <Button onClick={capturePhoto} className="bg-blue-600 hover:bg-blue-700">
+                  <Camera className="h-4 w-4 mr-2" />
+                  Capture Photo
+                </Button>
+                <Button variant="outline" onClick={stopWebcam}>
+                  Cancel
+                </Button>
+              </div>
             </div>
           )}
 
-          {/* Photo Gallery */}
-          {photos.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          {/* Keep video element mounted but hidden when not in use */}
+          {!isWebcamActive && (
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              style={{ display: 'none' }}
+            />
+          )}
+
+          {/* AI Processing Status */}
+          {isProcessing && (
+            <div className={`border-2 rounded-lg p-4 ${processingStage === 'error'
+              ? 'border-red-300 bg-red-50'
+              : processingStage === 'complete'
+                ? 'border-green-300 bg-green-50'
+                : 'border-blue-300 bg-blue-50'
+              }`}>
+              <div className="flex items-center space-x-2 mb-3">
+                {processingStage === 'detection' && (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></div>
+                    <Brain className="h-4 w-4 text-blue-600" />
+                    <span className="text-blue-800 font-medium">{processingStatus}</span>
+                  </>
+                )}
+                {processingStage === 'embedding' && (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-purple-600 border-t-transparent"></div>
+                    <Brain className="h-4 w-4 text-purple-600" />
+                    <span className="text-purple-800 font-medium">{processingStatus}</span>
+                  </>
+                )}
+                {processingStage === 'complete' && (
+                  <>
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <Database className="h-4 w-4 text-green-600" />
+                    <span className="text-green-800 font-medium">{processingStatus}</span>
+                  </>
+                )}
+                {processingStage === 'error' && (
+                  <>
+                    <AlertCircle className="h-4 w-4 text-red-600" />
+                    <span className="text-red-800 font-medium">{processingStatus}</span>
+                  </>
+                )}
+              </div>
+
+              {/* Processing Stage Indicators */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-2 text-xs">
+                  <div className={`w-2 h-2 rounded-full ${processingStage === 'detection' ? 'bg-blue-600 animate-pulse' :
+                    ['embedding', 'complete'].includes(processingStage) ? 'bg-green-500' : 'bg-gray-300'
+                    }`}></div>
+                  <span className={processingStage === 'detection' ? 'text-blue-800 font-medium' : 'text-gray-600'}>
+                    Face Detection
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2 text-xs">
+                  <div className={`w-2 h-2 rounded-full ${processingStage === 'embedding' ? 'bg-purple-600 animate-pulse' :
+                    processingStage === 'complete' ? 'bg-green-500' : 'bg-gray-300'
+                    }`}></div>
+                  <span className={processingStage === 'embedding' ? 'text-purple-800 font-medium' : 'text-gray-600'}>
+                    Embedding Generation
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2 text-xs">
+                  <div className={`w-2 h-2 rounded-full ${processingStage === 'complete' ? 'bg-green-500' : 'bg-gray-300'
+                    }`}></div>
+                  <span className={processingStage === 'complete' ? 'text-green-800 font-medium' : 'text-gray-600'}>
+                    Database Storage
+                  </span>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className={`h-2 rounded-full transition-all duration-500 ${processingStage === 'error' ? 'bg-red-500' :
+                    processingStage === 'complete' ? 'bg-green-500' :
+                      processingStage === 'embedding' ? 'bg-purple-600' : 'bg-blue-600'
+                    }`}
+                  style={{
+                    width: processingStage === 'detection' ? '33%' :
+                      processingStage === 'embedding' ? '66%' :
+                        processingStage === 'complete' ? '100%' : '33%'
+                  }}
+                ></div>
+              </div>
+            </div>
+          )}
+
+          {photos.length === 0 ? (
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+              <Camera className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+              <p className="text-gray-500">No photos captured yet</p>
+              <p className="text-sm text-gray-400 mt-1">
+                Upload photos or use webcam to capture clear front-facing images
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {photos.map((photo, index) => (
                 <div key={index} className="relative group">
-                  <div className="relative rounded-lg overflow-hidden border border-gray-200 shadow-sm bg-white">
+                  <div className="border rounded-lg overflow-hidden bg-white shadow-sm">
                     <img
                       src={photo.url}
-                      alt={`Captured ${index + 1}`}
-                      className="w-full h-48 object-cover"
+                      alt={`Face photo ${index + 1}`}
+                      className="w-full h-40 object-cover"
                     />
-                    <button
-                      onClick={() => removePhoto(index)}
-                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
 
                     {/* Photo Info Overlay */}
-                    <div className="p-3">
+                    <div className="p-3 bg-white">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-medium text-gray-500">
-                          {new Date().toLocaleTimeString()}
-                        </span>
-                        {photo.faceDetected ? (
-                          <span className="flex items-center text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
-                            <CheckCircle className="h-3 w-3 mr-1" />
-                            Face Detected
-                          </span>
-                        ) : (
-                          <span className="flex items-center text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full">
-                            <AlertCircle className="h-3 w-3 mr-1" />
-                            No Face
-                          </span>
-                        )}
+                        <div className="flex items-center space-x-2">
+                          {photo.faceDetected ? (
+                            <>
+                              <CheckCircle className="h-4 w-4 text-green-500" />
+                              <span className="text-sm font-medium text-green-700">Face Detected</span>
+                            </>
+                          ) : (
+                            <>
+                              <AlertCircle className="h-4 w-4 text-red-500" />
+                              <span className="text-sm font-medium text-red-700">Processing Failed</span>
+                            </>
+                          )}
+                          {photo.exifData?.latitude && photo.exifData?.longitude && (
+                            <div className="flex items-center space-x-1 ml-2 bg-orange-50 px-2 py-0.5 rounded">
+                              <MapPin className="h-3 w-3 text-orange-600" />
+                              <span className="text-xs text-orange-700">GPS</span>
+                            </div>
+                          )}
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removePhoto(index)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 p-0"
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
                       </div>
 
-                      {/* AI Details */}
+                      {/* AI Processing Details */}
                       {photo.faceDetected && (
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-xs">
+                        <div className="space-y-2 text-xs">
+                          <div className="flex items-center justify-between">
                             <span className="text-gray-600">Confidence:</span>
-                            <span className="font-medium text-blue-600">
-                              {(photo.confidence || 0).toFixed(1)}%
+                            <span className="font-medium text-gray-900">
+                              {photo.confidence ? `${(photo.confidence * 100).toFixed(1)}%` : 'N/A'}
                             </span>
                           </div>
 
-                          {/* Case ID Display */}
-                          <div className="flex items-center justify-between text-xs bg-gray-50 p-1.5 rounded">
-                            <span className="text-gray-600">Case ID:</span>
-                            <span className="font-mono font-medium text-gray-800 truncate max-w-[120px]" title={photo.caseId}>
-                              {photo.caseId || 'Generating...'}
-                            </span>
-                          </div>
+                          {photo.caseId && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-gray-600">Case ID:</span>
+                              <span className="font-medium text-blue-600 text-xs truncate max-w-[100px]" title={photo.caseId}>
+                                {photo.caseId}
+                              </span>
+                            </div>
+                          )}
+
+                          {photo.processingTime && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-gray-600">Processing:</span>
+                              <span className="font-medium text-gray-900">
+                                {photo.processingTime.toFixed(0)}ms
+                              </span>
+                            </div>
+                          )}
 
                           {/* EXIF Data - Location */}
-                          {photo.exifData?.latitude && (
-                            <div className="mt-2 pt-2 border-t border-gray-200">
-                              <div className="flex items-start space-x-1">
-                                <MapPin className="h-3 w-3 text-red-500 mt-0.5 flex-shrink-0" />
-                                <div className="flex-1 overflow-hidden">
-                                  <p className="text-xs font-medium text-gray-900 truncate">
-                                    {photo.exifData.address || `${photo.exifData.latitude.toFixed(4)}, ${photo.exifData.longitude.toFixed(4)}`}
-                                  </p>
+                          {photo.exifData?.latitude && photo.exifData?.longitude && (
+                            <div className="mt-3 pt-3 border-t border-gray-200">
+                              <div className="flex items-center space-x-1 mb-2">
+                                <MapPin className="h-3 w-3 text-orange-600" />
+                                <span className="text-xs font-semibold text-orange-900">Photo Location</span>
+                              </div>
+
+                              {/* Map */}
+                              <div className="h-32 rounded-md overflow-hidden border border-gray-300 mb-2">
+                                <MapContainer
+                                  center={[photo.exifData.latitude, photo.exifData.longitude]}
+                                  zoom={15}
+                                  style={{ height: '100%', width: '100%' }}
+                                  zoomControl={false}
+                                  attributionControl={false}
+                                >
+                                  <TileLayer
+                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                  />
+                                  <Marker position={[photo.exifData.latitude, photo.exifData.longitude]}>
+                                    <Popup>
+                                      Photo taken here
+                                    </Popup>
+                                  </Marker>
+                                </MapContainer>
+                              </div>
+
+                              {/* Location Details */}
+                              <div className="space-y-1">
+                                <div className="flex items-start space-x-1">
+                                  <Navigation className="h-3 w-3 text-gray-400 mt-0.5 flex-shrink-0" />
+                                  <span className="text-xs text-gray-600 leading-tight font-mono">
+                                    {photo.exifData.latitude}, {photo.exifData.longitude}
+                                  </span>
+                                </div>
+
+                                {photo.exifData.address && (
+                                  <div className="text-xs text-gray-700 leading-tight pl-4">
+                                    {photo.exifData.address}
+                                  </div>
+                                )}
+
+                                <div className="flex flex-wrap gap-2 pl-4 mt-1">
                                   <a
-                                    href={`https://www.google.com/maps?q=${photo.exifData.latitude},${photo.exifData.longitude}`}
+                                    href={`https://www.openstreetmap.org/?mlat=${photo.exifData.latitude}&mlon=${photo.exifData.longitude}#map=15/${photo.exifData.latitude}/${photo.exifData.longitude}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-xs text-blue-600 hover:underline inline-flex items-center space-x-1"
+                                  >
+                                    <span>View on OpenStreetMap</span>
+                                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                    </svg>
+                                  </a>
+                                  <a
+                                    href={`https://www.google.com/maps/search/?api=1&query=${photo.exifData.latitude},${photo.exifData.longitude}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="text-xs text-red-600 hover:underline inline-flex items-center space-x-1"
@@ -874,6 +1021,6 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
           }}
         />
       )}
-    </Card>
+    </Card >
   );
 }
