@@ -1,57 +1,53 @@
+import { useEffect, useState } from 'react';
 import { Layout } from '@/components/layout/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { MapPin, Clock, Eye, CheckCircle, X } from 'lucide-react';
+import { MapPin, Clock, Eye, CheckCircle, X, AlertTriangle as LucideAlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { databaseService } from '@/services/DatabaseService';
+
+interface AlertItem {
+  id: string;
+  caseId: string;
+  similarity: number;
+  sourceRole: string;
+  createdAt: string;
+  location?: string | null;
+  photoUrl?: string | null;
+  metadata?: any;
+}
 
 export function AlertsPage() {
-  const alerts = [
-    {
-      id: '1',
-      personName: 'Sarah Thompson',
-      caseId: 'CASE-2024-001',
-      detectionTime: '2024-08-25 14:30:15',
-      location: 'Downtown Station - Camera 12',
-      confidence: 94,
-      status: 'new',
-      imageUrl: '/api/placeholder/200/200'
-    },
-    {
-      id: '2',
-      personName: 'Michael Johnson',
-      caseId: 'CASE-2024-002',
-      detectionTime: '2024-08-25 13:45:22',
-      location: 'Shopping Mall - Camera 8',
-      confidence: 87,
-      status: 'verified',
-      imageUrl: '/api/placeholder/200/200'
-    },
-    {
-      id: '3',
-      personName: 'Emily Davis',
-      caseId: 'CASE-2024-003',
-      detectionTime: '2024-08-25 12:15:33',
-      location: 'Bus Terminal - Camera 3',
-      confidence: 91,
-      status: 'new',
-      imageUrl: '/api/placeholder/200/200'
-    },
-  ];
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'new':
-        return <Badge variant="destructive">New</Badge>;
-      case 'verified':
-        return <Badge className="bg-green-100 text-green-800">Verified</Badge>;
-      case 'false_positive':
-        return <Badge variant="outline">False Positive</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
+  useEffect(() => {
+    const loadAlerts = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await databaseService.getRecentAlerts(50);
+        setAlerts(data);
+      } catch (err) {
+        console.error('❌ Failed to load alerts', err);
+        setError('Failed to load alerts from database.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAlerts();
+  }, []);
+
+  const getStatusBadge = (sourceRole: string) => {
+    if (sourceRole === 'citizen') {
+      return <Badge variant="destructive">Public Tip</Badge>;
     }
+    return <Badge className="bg-blue-100 text-blue-800">System</Badge>;
   };
 
   return (
@@ -71,31 +67,37 @@ export function AlertsPage() {
         >
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">New Alerts</CardTitle>
+              <CardTitle className="text-sm font-medium">Total Alerts</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-600">8</div>
-              <p className="text-xs text-muted-foreground">Require attention</p>
+              <div className="text-2xl font-bold text-blue-600">{alerts.length}</div>
+              <p className="text-xs text-muted-foreground">Stored in the last period</p>
             </CardContent>
           </Card>
           
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Verified Today</CardTitle>
+              <CardTitle className="text-sm font-medium">Public Tips</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">12</div>
-              <p className="text-xs text-muted-foreground">Confirmed matches</p>
+              <div className="text-2xl font-bold text-red-600">
+                {alerts.filter(a => a.sourceRole === 'citizen').length}
+              </div>
+              <p className="text-xs text-muted-foreground">Submitted by citizens</p>
             </CardContent>
           </Card>
           
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">False Positives</CardTitle>
+              <CardTitle className="text-sm font-medium">Highest Similarity</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-gray-600">3</div>
-              <p className="text-xs text-muted-foreground">Marked as incorrect</p>
+              <div className="text-2xl font-bold text-green-600">
+                {alerts.length
+                  ? `${(Math.max(...alerts.map(a => a.similarity)) * 100).toFixed(1)}%`
+                  : 'N/A'}
+              </div>
+              <p className="text-xs text-muted-foreground">Top match confidence</p>
             </CardContent>
           </Card>
         </motion.div>
@@ -106,15 +108,25 @@ export function AlertsPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
         >
-          <Card>
+              <Card>
             <CardHeader>
               <CardTitle>Real-time Alerts</CardTitle>
               <CardDescription>
-                Latest detection alerts from the AI monitoring system
+                Latest detection alerts from the AI monitoring system and public citizen uploads
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              {error && (
+                <div className="mb-3 text-sm text-red-600">
+                  {error}
+                </div>
+              )}
+              {loading ? (
+                <div className="py-6 text-center text-sm text-gray-500">Loading alerts...</div>
+              ) : alerts.length === 0 ? (
+                <div className="py-6 text-center text-sm text-gray-500">No alerts yet.</div>
+              ) : (
+                <div className="space-y-4">
                 {alerts.map((alert) => (
                   <motion.div
                     key={alert.id}
@@ -123,37 +135,55 @@ export function AlertsPage() {
                     className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
                   >
                     <div className="flex items-start space-x-4">
-                      {/* Placeholder for detection image */}
-                      <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center">
-                        <Eye className="h-6 w-6 text-gray-400" />
+                      <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center border border-gray-200">
+                        <span className="text-sm font-semibold text-gray-700">
+                          {(alert.metadata?.personName ||
+                            alert.caseId.split('-')[1] ||
+                            alert.caseId[0] ||
+                            '?')
+                            .toString()
+                            .trim()
+                            .charAt(0)
+                            .toUpperCase()}
+                        </span>
                       </div>
                       
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-2">
                           <div>
-                            <h3 className="font-semibold text-lg">{alert.personName}</h3>
-                            <p className="text-sm text-muted-foreground">Case: {alert.caseId}</p>
+                            <h3 className="font-semibold text-lg">
+                              {alert.metadata?.personName
+                                ? `${alert.metadata.personName} (${alert.caseId})`
+                                : alert.caseId}
+                            </h3>
+                            <p className="text-sm text-muted-foreground">
+                              Source: {alert.sourceRole === 'citizen' ? 'Public citizen' : 'System'}
+                            </p>
                           </div>
-                          {getStatusBadge(alert.status)}
+                          {getStatusBadge(alert.sourceRole)}
                         </div>
                         
                         <div className="grid gap-2 text-sm text-muted-foreground">
-                          <div className="flex items-center">
-                            <MapPin className="h-4 w-4 mr-2" />
-                            {alert.location}
-                          </div>
+                          {alert.location && (
+                            <div className="flex items-center">
+                              <MapPin className="h-4 w-4 mr-2" />
+                              {alert.location}
+                            </div>
+                          )}
                           <div className="flex items-center">
                             <Clock className="h-4 w-4 mr-2" />
-                            {alert.detectionTime}
+                            {new Date(alert.createdAt).toLocaleString()}
                           </div>
                         </div>
                         
                         <div className="mt-3">
                           <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm font-medium">Confidence Score</span>
-                            <span className="text-sm font-medium">{alert.confidence}%</span>
+                            <span className="text-sm font-medium">Match Similarity</span>
+                            <span className="text-sm font-medium">
+                              {(alert.similarity * 100).toFixed(1)}%
+                            </span>
                           </div>
-                          <Progress value={alert.confidence} className="h-2" />
+                          <Progress value={alert.similarity * 100} className="h-2" />
                         </div>
                       </div>
                       
@@ -161,21 +191,18 @@ export function AlertsPage() {
                         <Button size="sm" variant="outline">
                           <Eye className="h-4 w-4" />
                         </Button>
-                        {alert.status === 'new' && (
-                          <>
-                            <Button size="sm" className="bg-green-600 hover:bg-green-700">
-                              <CheckCircle className="h-4 w-4" />
-                            </Button>
-                            <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700">
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </>
-                        )}
+                        <Button size="sm" className="bg-green-600 hover:bg-green-700">
+                          <CheckCircle className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700">
+                          <X className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
                   </motion.div>
                 ))}
               </div>
+              )}
             </CardContent>
           </Card>
         </motion.div>
@@ -187,22 +214,14 @@ export function AlertsPage() {
           transition={{ delay: 0.2 }}
         >
           <Alert className="border-red-200 bg-red-50">
-            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <LucideAlertTriangle className="h-4 w-4 text-red-600" />
             <AlertDescription className="text-red-800">
-              <strong>High Priority:</strong> Multiple detections of Sarah Thompson in the downtown area. 
-              Confidence scores above 90%. Consider immediate field response.
+              <strong>Note:</strong> Public citizen alerts should always be verified by trained
+              personnel before action is taken.
             </AlertDescription>
           </Alert>
         </motion.div>
       </div>
     </Layout>
-  );
-}
-
-function AlertTriangle({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.268 18.5c-.77.833.192 2.5 1.732 2.5z" />
-    </svg>
   );
 }

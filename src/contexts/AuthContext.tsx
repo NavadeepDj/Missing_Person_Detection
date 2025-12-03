@@ -39,6 +39,13 @@ const DUMMY_USERS: User[] = [
     email: 'coordinator@missingpersons.org',
     role: 'case_manager',
     organization: 'Missing Persons NGO'
+  },
+  {
+    id: '5',
+    name: 'Public Citizen',
+    email: 'citizen@tracevision.com',
+    role: 'citizen',
+    organization: 'Community User'
   }
 ];
 
@@ -46,7 +53,8 @@ const DUMMY_PASSWORDS: Record<string, string> = {
   'admin@tracevision.com': 'admin123',
   'sarah.johnson@police.gov': 'police123',
   'mike.chen@police.gov': 'officer123',
-  'coordinator@missingpersons.org': 'ngo123'
+  'coordinator@missingpersons.org': 'ngo123',
+  'citizen@tracevision.com': 'citizen123'
 };
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {

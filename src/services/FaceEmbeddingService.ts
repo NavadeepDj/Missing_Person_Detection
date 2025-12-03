@@ -4,7 +4,7 @@ import * as faceDetection from '@tensorflow-models/face-detection';
 interface FaceEmbedding {
   id: string;
   caseId: string;
-  embedding: number[]; // 128-dimensional array
+  embedding: number[]; // 512-dimensional array (ArcFace)
   confidence: number;
   createdAt: string;
 }
@@ -112,7 +112,7 @@ export class FaceEmbeddingService {
   }
 
   /**
-   * Extract 128-dimensional embedding from face landmarks
+   * Extract 512-dimensional embedding from face landmarks
    */
   private async extractEmbeddingFromFace(image: HTMLImageElement, face: faceDetection.Face): Promise<number[]> {
     try {
@@ -164,19 +164,19 @@ export class FaceEmbeddingService {
   }
 
   /**
-   * Generate a simple 128-dimensional embedding
-   * This is a simplified version - in production you'd use MobileFaceNet
+   * Generate a simple 512-dimensional embedding
+   * This is a simplified version - in production you'd use ArcFace (handled by EmbeddingService)
    */
   private async generateSimpleEmbedding(faceTensor: tf.Tensor): Promise<number[]> {
     try {
       // Simplified embedding generation using tensor operations
-      // This creates a 128-dimensional vector from the face tensor
+      // This creates a 512-dimensional vector from the face tensor
 
       // Flatten the tensor
       const flattened = tf.layers.flatten().apply(faceTensor) as tf.Tensor;
 
-      // Dense layer to create 128-dimensional embedding
-      const dense = tf.layers.dense({ units: 128, activation: 'relu' });
+      // Dense layer to create 512-dimensional embedding
+      const dense = tf.layers.dense({ units: 512, activation: 'relu' });
       const embeddingTensor = dense.apply(flattened) as tf.Tensor;
 
       // Normalize the embedding
@@ -203,11 +203,11 @@ export class FaceEmbeddingService {
    * Fallback embedding generation when TensorFlow fails
    */
   private generateFallbackEmbedding(): number[] {
-    // Generate a deterministic but pseudo-random 128-dimensional embedding
+    // Generate a deterministic but pseudo-random 512-dimensional embedding
     const seed = Date.now();
     const embedding: number[] = [];
 
-    for (let i = 0; i < 128; i++) {
+    for (let i = 0; i < 512; i++) {
       // Create a pseudo-random but consistent embedding based on seed
       const value = Math.sin(seed + i * 1.1) * 0.5 + 0.5;
       embedding.push(value);

@@ -66,12 +66,17 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isWebcamActive, setIsWebcamActive] = useState(false);
   const [pendingStream, setPendingStream] = useState<MediaStream | null>(null);
+  const [caseName, setCaseName] = useState<string>('');
+  const [caseAge, setCaseAge] = useState<string>('');
+  const [caseStatus, setCaseStatus] = useState<string>('active');
+  const [caseLocation, setCaseLocation] = useState<string>('');
+  const [caseDateReported, setCaseDateReported] = useState<string>('');
 
   // Initialize AI services on component mount
   useEffect(() => {
     // Clear any potentially stale photos on mount
     setPhotos([]);
-    
+
     const initializeAI = async () => {
       try {
         console.log('🧠 Initializing AI services...');
@@ -151,7 +156,7 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
     const reader = new FileReader();
     reader.onload = async (e) => {
       const photoUrl = e.target?.result as string;
-      
+
       // Don't add to photos array yet - let processPhotoWithAI handle it
       await processPhotoWithAI(photoUrl);
     };
@@ -244,7 +249,7 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
         context.drawImage(videoRef.current, 0, 0);
 
         const photoUrl = canvasRef.current.toDataURL('image/jpeg');
-        
+
         // Stop webcam after capture
         stopWebcam();
 
@@ -252,6 +257,33 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
         processPhotoWithAI(photoUrl);
       }
     }
+  };
+
+  // Get current browser GPS location (if user grants permission)
+  const getBrowserLocation = async (): Promise<{ latitude: number; longitude: number } | null> => {
+    if (!('geolocation' in navigator)) {
+      console.warn('ℹ️ Browser geolocation API not available');
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          console.log('📍 Browser GPS location acquired:', { latitude, longitude });
+          resolve({ latitude, longitude });
+        },
+        (error) => {
+          console.warn('⚠️ Browser geolocation failed or was denied:', error);
+          resolve(null);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 8000,
+          maximumAge: 0
+        }
+      );
+    });
   };
 
   // Real AI Processing with face detection and embedding generation
@@ -267,8 +299,25 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
     setProcessingStatus('🔍 Detecting faces in photo...');
 
     try {
-      // Generate unique case ID for this photo
-      const caseId = `CASE-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+      // Generate human-friendly case ID: Name-Date(Y/M/day)-Timestamp
+      const today = new Date();
+      const datePart = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
+      const namePart = (caseName || 'Unknown').trim().replace(/\s+/g, '-');
+      const timestamp = today.getTime();
+      const caseId = `${namePart}-${datePart}-${timestamp}`;
+
+      // Prepare case metadata
+      const parsedAge = caseAge ? Number(caseAge) : undefined;
+      const metadata = {
+        name: caseName || undefined,
+        age: Number.isFinite(parsedAge) ? parsedAge : undefined,
+        status: caseStatus || 'active',
+        location: caseLocation || undefined,
+        dateReported: caseDateReported || new Date().toISOString().slice(0, 10)
+      };
+
+      // Try to get current GPS location from the browser in parallel
+      const browserLocationPromise = getBrowserLocation();
 
       console.log('🚀 Starting real AI processing for case:', caseId);
 
@@ -276,12 +325,12 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
       setProcessingStatus('🔍 Detecting faces and generating embeddings...');
       setProcessingStage('embedding');
 
-      const result = await FaceProcessingService.processAndStoreFaceEmbedding(photoUrl, caseId);
+      const result = await FaceProcessingService.processAndStoreFaceEmbedding(photoUrl, caseId, metadata);
 
       if (result.success) {
         // Extract EXIF data in parallel
         const exifDataPromise = extractExifData(photoUrl);
-        
+
         // Update AI statistics
         setAiStats(prev => ({
           ...prev,
@@ -293,8 +342,17 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
         setProcessingStage('complete');
         setProcessingStatus('✅ Face embedding generated and stored in database!');
 
-        // Wait for EXIF data
-        const exifData = await exifDataPromise;
+        // Wait for EXIF data and browser GPS (for fallback)
+        const [exifData, browserLocation] = await Promise.all([exifDataPromise, browserLocationPromise]);
+
+        // Prefer EXIF GPS if present; otherwise fall back to browser GPS
+        let finalExifData = exifData || undefined;
+        if (!finalExifData && browserLocation) {
+          finalExifData = {
+            latitude: browserLocation.latitude,
+            longitude: browserLocation.longitude
+          };
+        }
 
         // Add processed photo to state
         const processedPhoto: ProcessedPhoto = {
@@ -304,7 +362,7 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
           confidence: result.confidence,
           processingTime: result.processingTime,
           faceDetected: true,
-          exifData: exifData || undefined
+          exifData: finalExifData
         };
 
         setPhotos(prev => [...prev, processedPhoto]);
@@ -348,32 +406,32 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
   const extractExifData = async (photoUrl: string) => {
     try {
       console.log('📍 Extracting EXIF data from photo...');
-      
+
       // Convert data URL to blob
       const response = await fetch(photoUrl);
       const blob = await response.blob();
-      
+
       // Extract EXIF data
       const exif = await exifr.parse(blob, {
         gps: true,
         tiff: true,
         exif: true,
       });
-      
+
       if (!exif) {
         console.log('ℹ️ No EXIF data found in image');
         return null;
       }
-      
+
       console.log('✅ EXIF data extracted:', exif);
-      
+
       const exifData: ProcessedPhoto['exifData'] = {};
-      
+
       // Extract GPS coordinates
       if (exif.latitude && exif.longitude) {
         exifData.latitude = exif.latitude;
         exifData.longitude = exif.longitude;
-        
+
         // Fetch address from OpenStreetMap Nominatim API
         try {
           const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${exif.latitude}&lon=${exif.longitude}`;
@@ -385,17 +443,17 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
           console.error('Error fetching address:', error);
         }
       }
-      
+
       // Extract timestamp
       if (exif.DateTimeOriginal || exif.DateTime) {
         exifData.timestamp = (exif.DateTimeOriginal || exif.DateTime).toISOString();
       }
-      
+
       // Extract camera info
       if (exif.Make || exif.Model) {
         exifData.camera = `${exif.Make || ''} ${exif.Model || ''}`.trim();
       }
-      
+
       return exifData;
     } catch (error) {
       console.error('❌ Error extracting EXIF data:', error);
@@ -424,6 +482,62 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
     <Card className="w-full">
       <CardContent className="p-4">
         <div className="space-y-4">
+          {/* Case Details Form */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
+              <input
+                type="text"
+                value={caseName}
+                onChange={(e) => setCaseName(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+                placeholder="Person's name"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Age</label>
+              <input
+                type="number"
+                value={caseAge}
+                onChange={(e) => setCaseAge(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+                placeholder="Age"
+                min={0}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+              <select
+                value={caseStatus}
+                onChange={(e) => setCaseStatus(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+              >
+                <option value="active">Active</option>
+                <option value="found">Found</option>
+                <option value="closed">Closed</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Last Location</label>
+              <input
+                type="text"
+                value={caseLocation}
+                onChange={(e) => setCaseLocation(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+                placeholder="Last known location"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Date Reported</label>
+              <input
+                type="date"
+                value={caseDateReported}
+                onChange={(e) => setCaseDateReported(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+              />
+            </div>
+          </div>
+
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-medium flex items-center space-x-2">
               <Brain className="h-5 w-5 text-blue-600" />
@@ -476,7 +590,7 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
 
           {/* Hidden canvas for webcam capture */}
           <canvas ref={canvasRef} className="hidden" />
-          
+
           {/* Webcam View - single video element, conditionally displayed */}
           {isWebcamActive && (
             <div className="border-2 border-blue-300 rounded-lg p-4 bg-blue-50">
@@ -487,263 +601,125 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
                     autoPlay
                     playsInline
                     muted
-                    className="w-full h-full object-cover mirror-video"
+                    className="w-full h-full object-cover"
                   />
                 </div>
-                <div className="absolute top-2 right-2">
-                  <div className="flex items-center space-x-2 bg-red-600 text-white px-3 py-1 rounded-full">
-                    <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                    <span className="text-sm font-medium">LIVE</span>
-                  </div>
-                </div>
-              </div>
-              <div className="flex justify-center mt-4 space-x-2">
-                <Button onClick={capturePhoto} className="bg-blue-600 hover:bg-blue-700">
-                  <Camera className="h-4 w-4 mr-2" />
-                  Capture Photo
+                <Button
+                  onClick={capturePhoto}
+                  className="absolute bottom-4 left-1/2 transform -translate-x-1/2 rounded-full w-12 h-12 p-0 border-4 border-white"
+                  variant="destructive"
+                >
+                  <span className="sr-only">Capture</span>
                 </Button>
-                <Button variant="outline" onClick={stopWebcam}>
-                  Cancel
+                <Button
+                  onClick={stopWebcam}
+                  className="absolute top-2 right-2 rounded-full w-8 h-8 p-0 bg-gray-800/50 hover:bg-gray-800/70"
+                  variant="ghost"
+                >
+                  <X className="h-4 w-4 text-white" />
                 </Button>
               </div>
-            </div>
-          )}
-          
-          {/* Keep video element mounted but hidden when not in use */}
-          {!isWebcamActive && (
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              style={{ display: 'none' }}
-            />
-          )}
-
-          {/* AI Processing Status */}
-          {isProcessing && (
-            <div className={`border-2 rounded-lg p-4 ${
-              processingStage === 'error'
-                ? 'border-red-300 bg-red-50'
-                : processingStage === 'complete'
-                ? 'border-green-300 bg-green-50'
-                : 'border-blue-300 bg-blue-50'
-            }`}>
-              <div className="flex items-center space-x-2 mb-3">
-                {processingStage === 'detection' && (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></div>
-                    <Brain className="h-4 w-4 text-blue-600" />
-                    <span className="text-blue-800 font-medium">{processingStatus}</span>
-                  </>
-                )}
-                {processingStage === 'embedding' && (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-purple-600 border-t-transparent"></div>
-                    <Brain className="h-4 w-4 text-purple-600" />
-                    <span className="text-purple-800 font-medium">{processingStatus}</span>
-                  </>
-                )}
-                {processingStage === 'complete' && (
-                  <>
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <Database className="h-4 w-4 text-green-600" />
-                    <span className="text-green-800 font-medium">{processingStatus}</span>
-                  </>
-                )}
-                {processingStage === 'error' && (
-                  <>
-                    <AlertCircle className="h-4 w-4 text-red-600" />
-                    <span className="text-red-800 font-medium">{processingStatus}</span>
-                  </>
-                )}
-              </div>
-
-              {/* Processing Stage Indicators */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-2 text-xs">
-                  <div className={`w-2 h-2 rounded-full ${
-                    processingStage === 'detection' ? 'bg-blue-600 animate-pulse' :
-                    ['embedding', 'complete'].includes(processingStage) ? 'bg-green-500' : 'bg-gray-300'
-                  }`}></div>
-                  <span className={processingStage === 'detection' ? 'text-blue-800 font-medium' : 'text-gray-600'}>
-                    Face Detection
-                  </span>
-                </div>
-                <div className="flex items-center space-x-2 text-xs">
-                  <div className={`w-2 h-2 rounded-full ${
-                    processingStage === 'embedding' ? 'bg-purple-600 animate-pulse' :
-                    processingStage === 'complete' ? 'bg-green-500' : 'bg-gray-300'
-                  }`}></div>
-                  <span className={processingStage === 'embedding' ? 'text-purple-800 font-medium' : 'text-gray-600'}>
-                    Embedding Generation
-                  </span>
-                </div>
-                <div className="flex items-center space-x-2 text-xs">
-                  <div className={`w-2 h-2 rounded-full ${
-                    processingStage === 'complete' ? 'bg-green-500' : 'bg-gray-300'
-                  }`}></div>
-                  <span className={processingStage === 'complete' ? 'text-green-800 font-medium' : 'text-gray-600'}>
-                    Database Storage
-                  </span>
-                </div>
-              </div>
-
-              {/* Progress Bar */}
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div
-                  className={`h-2 rounded-full transition-all duration-500 ${
-                    processingStage === 'error' ? 'bg-red-500' :
-                    processingStage === 'complete' ? 'bg-green-500' :
-                    processingStage === 'embedding' ? 'bg-purple-600' : 'bg-blue-600'
-                  }`}
-                  style={{
-                    width: processingStage === 'detection' ? '33%' :
-                           processingStage === 'embedding' ? '66%' :
-                           processingStage === 'complete' ? '100%' : '33%'
-                  }}
-                ></div>
-              </div>
-            </div>
-          )}
-
-          {photos.length === 0 ? (
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-              <Camera className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-              <p className="text-gray-500">No photos captured yet</p>
-              <p className="text-sm text-gray-400 mt-1">
-                Upload photos or use webcam to capture clear front-facing images
+              <p className="text-center text-sm text-blue-800 mt-2">
+                Position face in center and ensure good lighting
               </p>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          )}
+
+          {/* Processing Status */}
+          {isProcessing && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 animate-pulse">
+              <div className="flex items-center space-x-3">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                <div>
+                  <p className="text-sm font-medium text-blue-900">{processingStatus}</p>
+                  <p className="text-xs text-blue-700 mt-1">
+                    Stage: {processingStage.charAt(0).toUpperCase() + processingStage.slice(1)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Photo Gallery */}
+          {photos.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               {photos.map((photo, index) => (
                 <div key={index} className="relative group">
-                  <div className="border rounded-lg overflow-hidden bg-white shadow-sm">
+                  <div className="relative rounded-lg overflow-hidden border border-gray-200 shadow-sm bg-white">
                     <img
                       src={photo.url}
-                      alt={`Face photo ${index + 1}`}
-                      className="w-full h-40 object-cover"
+                      alt={`Captured ${index + 1}`}
+                      className="w-full h-48 object-cover"
                     />
+                    <button
+                      onClick={() => removePhoto(index)}
+                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
 
                     {/* Photo Info Overlay */}
-                    <div className="p-3 bg-white">
+                    <div className="p-3">
                       <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center space-x-2">
-                          {photo.faceDetected ? (
-                            <>
-                              <CheckCircle className="h-4 w-4 text-green-500" />
-                              <span className="text-sm font-medium text-green-700">Face Detected</span>
-                            </>
-                          ) : (
-                            <>
-                              <AlertCircle className="h-4 w-4 text-red-500" />
-                              <span className="text-sm font-medium text-red-700">Processing Failed</span>
-                            </>
-                          )}
-                          {photo.exifData?.latitude && photo.exifData?.longitude && (
-                            <div className="flex items-center space-x-1 ml-2 bg-orange-50 px-2 py-0.5 rounded">
-                              <MapPin className="h-3 w-3 text-orange-600" />
-                              <span className="text-xs text-orange-700">GPS</span>
-                            </div>
-                          )}
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removePhoto(index)}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 p-0"
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
+                        <span className="text-xs font-medium text-gray-500">
+                          {new Date().toLocaleTimeString()}
+                        </span>
+                        {photo.faceDetected ? (
+                          <span className="flex items-center text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            Face Detected
+                          </span>
+                        ) : (
+                          <span className="flex items-center text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full">
+                            <AlertCircle className="h-3 w-3 mr-1" />
+                            No Face
+                          </span>
+                        )}
                       </div>
 
-                      {/* AI Processing Details */}
+                      {/* AI Details */}
                       {photo.faceDetected && (
-                        <div className="space-y-2 text-xs">
-                          <div className="flex items-center justify-between">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs">
                             <span className="text-gray-600">Confidence:</span>
-                            <span className="font-medium text-gray-900">
-                              {photo.confidence ? `${(photo.confidence * 100).toFixed(1)}%` : 'N/A'}
+                            <span className="font-medium text-blue-600">
+                              {(photo.confidence || 0).toFixed(1)}%
                             </span>
                           </div>
 
-                          {photo.caseId && (
-                            <div className="flex items-center justify-between">
-                              <span className="text-gray-600">Case ID:</span>
-                              <span className="font-medium text-blue-600 text-xs truncate max-w-[100px]" title={photo.caseId}>
-                                {photo.caseId}
-                              </span>
-                            </div>
-                          )}
-
-                          {photo.processingTime && (
-                            <div className="flex items-center justify-between">
-                              <span className="text-gray-600">Processing:</span>
-                              <span className="font-medium text-gray-900">
-                                {photo.processingTime.toFixed(0)}ms
-                              </span>
-                            </div>
-                          )}
+                          {/* Case ID Display */}
+                          <div className="flex items-center justify-between text-xs bg-gray-50 p-1.5 rounded">
+                            <span className="text-gray-600">Case ID:</span>
+                            <span className="font-mono font-medium text-gray-800 truncate max-w-[120px]" title={photo.caseId}>
+                              {photo.caseId || 'Generating...'}
+                            </span>
+                          </div>
 
                           {/* EXIF Data - Location */}
-                          {photo.exifData?.latitude && photo.exifData?.longitude && (
-                            <div className="mt-3 pt-3 border-t border-gray-200">
-                              <div className="flex items-center space-x-1 mb-2">
-                                <MapPin className="h-3 w-3 text-orange-600" />
-                                <span className="text-xs font-semibold text-orange-900">Photo Location</span>
-                              </div>
-                              
-                              {/* Map */}
-                              <div className="h-32 rounded-md overflow-hidden border border-gray-300 mb-2">
-                                <MapContainer
-                                  center={[photo.exifData.latitude, photo.exifData.longitude]}
-                                  zoom={15}
-                                  style={{ height: '100%', width: '100%' }}
-                                  zoomControl={false}
-                                  attributionControl={false}
-                                >
-                                  <TileLayer
-                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                  />
-                                  <Marker position={[photo.exifData.latitude, photo.exifData.longitude]}>
-                                    <Popup>
-                                      Photo taken here
-                                    </Popup>
-                                  </Marker>
-                                </MapContainer>
-                              </div>
-                              
-                              {/* Location Details */}
-                              <div className="space-y-1">
-                                <div className="flex items-start space-x-1">
-                                  <Navigation className="h-3 w-3 text-gray-400 mt-0.5 flex-shrink-0" />
-                                  <span className="text-xs text-gray-600 leading-tight font-mono">
-                                    {photo.exifData.latitude}, {photo.exifData.longitude}
-                                  </span>
+                          {photo.exifData?.latitude && (
+                            <div className="mt-2 pt-2 border-t border-gray-200">
+                              <div className="flex items-start space-x-1">
+                                <MapPin className="h-3 w-3 text-red-500 mt-0.5 flex-shrink-0" />
+                                <div className="flex-1 overflow-hidden">
+                                  <p className="text-xs font-medium text-gray-900 truncate">
+                                    {photo.exifData.address || `${photo.exifData.latitude.toFixed(4)}, ${photo.exifData.longitude.toFixed(4)}`}
+                                  </p>
+                                  <a
+                                    href={`https://www.google.com/maps?q=${photo.exifData.latitude},${photo.exifData.longitude}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-xs text-red-600 hover:underline inline-flex items-center space-x-1"
+                                  >
+                                    <span>Open in Google Maps</span>
+                                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                    </svg>
+                                  </a>
                                 </div>
-                                
-                                {photo.exifData.address && (
-                                  <div className="text-xs text-gray-700 leading-tight pl-4">
-                                    {photo.exifData.address}
-                                  </div>
-                                )}
-                                
-                                <a
-                                  href={`https://www.openstreetmap.org/?mlat=${photo.exifData.latitude}&mlon=${photo.exifData.longitude}#map=15/${photo.exifData.latitude}/${photo.exifData.longitude}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-xs text-blue-600 hover:underline inline-flex items-center space-x-1 pl-4"
-                                >
-                                  <span>View on OpenStreetMap</span>
-                                  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                  </svg>
-                                </a>
                               </div>
                             </div>
                           )}
-                          
+
                           {/* EXIF Data - Other Info */}
                           {(photo.exifData?.timestamp || photo.exifData?.camera) && (
                             <div className="mt-2 pt-2 border-t border-gray-200 space-y-1">
@@ -876,7 +852,7 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
                   <div>
                     <strong>✅ AI Processing Complete!</strong>
                     <p className="text-xs mt-1">
-                      {aiStats.facesDetected} face(s) detected and {aiStats.totalProcessed} 128-dimensional embeddings generated.
+                      {aiStats.facesDetected} face(s) detected and {aiStats.totalProcessed} 512-dimensional embeddings generated.
                       Ready for real-time facial recognition matching.
                     </p>
                   </div>

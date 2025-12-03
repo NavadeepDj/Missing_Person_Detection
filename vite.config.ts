@@ -9,6 +9,15 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Ensure the browser gets the UMD/dist build of `long` (not the
+      // CommonJS `src/long.js` which uses `module.exports` and breaks in
+      // the browser runtime). This forces imports of `long` to use the
+      // prebuilt UMD file.
+      "long": path.resolve(__dirname, "./node_modules/long/dist/long.js"),
+  // Serve the browser-safe UMD/minified build of seedrandom instead of
+  // the CommonJS `index.js` which uses `require`/`module.exports` and
+  // crashes in the browser runtime.
+  "seedrandom": path.resolve(__dirname, "./node_modules/seedrandom/seedrandom.min.js"),
     },
   },
   build: {
@@ -32,6 +41,10 @@ export default defineConfig({
       'react',
       'react-dom',
       'react-router-dom',
+      // Prebundle long so Vite serves the browser-safe build
+      'long',
+      // Prebundle seedrandom so Vite serves the browser-safe UMD build
+      'seedrandom',
       '@tensorflow/tfjs',
       '@tensorflow/tfjs-converter',
       '@tensorflow-models/face-detection',

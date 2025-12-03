@@ -57,7 +57,7 @@ export function FaceEmbeddingModal({ photo, isOpen, onClose }: FaceEmbeddingModa
             <Brain className="h-6 w-6 text-blue-600" />
             <div>
               <h2 className="text-xl font-bold text-gray-900">Face Embedding Details</h2>
-              <p className="text-sm text-gray-600">128-dimensional facial recognition vector</p>
+              <p className="text-sm text-gray-600">512-dimensional facial recognition vector (ArcFace)</p>
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -196,7 +196,7 @@ export function FaceEmbeddingModal({ photo, isOpen, onClose }: FaceEmbeddingModa
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-lg font-semibold flex items-center space-x-2">
                     <Database className="h-5 w-5 text-gray-600" />
-                    <span>128-Dimensional Embedding Vector</span>
+                    <span>512-Dimensional Embedding Vector</span>
                   </h3>
                   <Button
                     variant="outline"
@@ -210,7 +210,7 @@ export function FaceEmbeddingModal({ photo, isOpen, onClose }: FaceEmbeddingModa
 
                 <div className="bg-gray-50 rounded-lg p-4">
                   <div className="grid grid-cols-4 md:grid-cols-8 gap-2 text-xs font-mono">
-                    {photo.embedding.slice(0, showFullEmbedding ? 128 : 32).map((value, index) => (
+                    {photo.embedding.slice(0, showFullEmbedding ? photo.embedding.length : 32).map((value, index) => (
                       <div
                         key={index}
                         className={`p-2 rounded text-center ${
@@ -226,7 +226,7 @@ export function FaceEmbeddingModal({ photo, isOpen, onClose }: FaceEmbeddingModa
 
                   {!showFullEmbedding && photo.embedding.length > 32 && (
                     <div className="text-center mt-3 text-sm text-gray-600">
-                      Showing 32 of 128 values - Click "Show All" to view complete vector
+                      Showing 32 of {photo.embedding.length} values - Click "Show All" to view complete vector
                     </div>
                   )}
 
@@ -258,11 +258,11 @@ export function FaceEmbeddingModal({ photo, isOpen, onClose }: FaceEmbeddingModa
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <span className="text-gray-600">Model:</span>
-                    <span className="font-medium ml-2">MobileFaceNet + Face Detection</span>
+                    <span className="font-medium ml-2">ArcFace (ONNX) + Face Detection</span>
                   </div>
                   <div>
                     <span className="text-gray-600">Dimensions:</span>
-                    <span className="font-medium ml-2">128D Float Array</span>
+                    <span className="font-medium ml-2">512D Float Array</span>
                   </div>
                   <div>
                     <span className="text-gray-600">Normalization:</span>

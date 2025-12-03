@@ -1,8 +1,7 @@
-// Face embedding generation using MobileFaceNet
-// Based on MobileFaceNet_Optimized.py and example_Mobileettflite.md
+// Face embedding generation using ArcFace (ONNX, 512-D embedding)
+// Model: arcface.onnx served from /models/arcface.onnx
 
-import * as tf from '@tensorflow/tfjs';
-import '@tensorflow/tfjs-converter';
+import * as ort from 'onnxruntime-web';
 
 export interface EmbeddingResult {
   embedding: number[];
@@ -12,28 +11,27 @@ export interface EmbeddingResult {
 
 export class EmbeddingService {
   private static modelLoaded = false;
-  private static model: tf.GraphModel | null = null;
-  private static readonly EMBEDDING_SIZE = 128;
+  private static session: ort.InferenceSession | null = null;
+  private static readonly EMBEDDING_SIZE = 512;
   private static readonly INPUT_SIZE = 112;
 
-  // Initialize MobileFaceNet model
+  // Initialize ArcFace ONNX model
   static async initializeModel(): Promise<boolean> {
     try {
       if (this.modelLoaded) return true;
 
-      console.log('🔄 Loading MobileFaceNet model...');
+      console.log('🔄 Loading ArcFace ONNX model...');
 
-      // Load the MobileFaceNet model using TensorFlow.js converter
-      // The converter can load TFLite models directly
-      this.model = await tf.loadGraphModel('/models/output_model.tflite');
+      // Load the ArcFace ONNX model using onnxruntime-web
+      this.session = await ort.InferenceSession.create('/models/arcface.onnx');
 
       this.modelLoaded = true;
-      console.log('✅ MobileFaceNet model loaded successfully');
-      console.log('🧠 Model inputs:', this.model.inputs.map(input => input.shape));
-      console.log('🧠 Model outputs:', this.model.outputs.map(output => output.shape));
+      console.log('✅ ArcFace model loaded successfully');
+      console.log('🧠 Model inputs:', this.session.inputNames);
+      console.log('🧠 Model outputs:', this.session.outputNames);
       return true;
     } catch (error) {
-      console.error('❌ Error loading MobileFaceNet model:', error);
+      console.error('❌ Error loading ArcFace model:', error);
       console.log('🔄 Falling back to mock embeddings for demo...');
       // Set modelLoaded to true to allow fallback operation
       this.modelLoaded = true;
@@ -41,7 +39,7 @@ export class EmbeddingService {
     }
   }
 
-  // Preprocess face image for MobileFaceNet (matching Python implementation)
+  // Preprocess face image for ArcFace
   static preprocessFace(imageData: ImageData): Float32Array | null {
     try {
       const { width, height, data } = imageData;
@@ -65,10 +63,10 @@ export class EmbeddingService {
           const g = data[sourceIndex + 1];
           const b = data[sourceIndex + 2];
 
-          // Normalize to [-1, 1] range (matching face.astype("float32") / 127.5 - 1.0)
-          processedData[dataIndex++] = (r / 127.5) - 1.0;
-          processedData[dataIndex++] = (g / 127.5) - 1.0;
-          processedData[dataIndex++] = (b / 127.5) - 1.0;
+          // Normalize to ArcFace input: (img - 127.5) / 128.0
+          processedData[dataIndex++] = (r - 127.5) / 128.0;
+          processedData[dataIndex++] = (g - 127.5) / 128.0;
+          processedData[dataIndex++] = (b - 127.5) / 128.0;
         }
       }
 
@@ -79,7 +77,7 @@ export class EmbeddingService {
     }
   }
 
-  // Generate face embedding using MobileFaceNet
+  // Generate face embedding using ArcFace
   static async generateEmbedding(imageData: ImageData): Promise<EmbeddingResult | null> {
     const startTime = performance.now();
 
@@ -99,31 +97,30 @@ export class EmbeddingService {
       let embedding: number[];
 
       // Try to use real model if available, otherwise fall back to mock
-      if (this.model) {
-        console.log('🧠 Running inference with MobileFaceNet...');
+      if (this.session) {
+        console.log('🧠 Running inference with ArcFace...');
 
         try {
-          // Create input tensor from preprocessed data
-          const input = new Float32Array(preprocessedFace);
-          const inputTensor = tf.tensor4d(input, [1, this.INPUT_SIZE, this.INPUT_SIZE, 3]);
+          // ArcFace expects input shape (1, 112, 112, 3) in NHWC format
+          const inputTensor = new ort.Tensor('float32', preprocessedFace, [1, this.INPUT_SIZE, this.INPUT_SIZE, 3]);
 
-          // Run inference using the GraphModel
-          const outputTensor = await this.model.executeAsync(inputTensor) as tf.Tensor;
+          const feeds: Record<string, ort.Tensor> = {};
+          const inputName = this.session.inputNames[0];
+          feeds[inputName] = inputTensor;
 
-          // Get the embedding data
-          const outputData = await outputTensor.data();
-          embedding = Array.from(outputData);
+          const results = await this.session.run(feeds);
 
-          // Clean up tensors
-          inputTensor.dispose();
-          outputTensor.dispose();
+          const outputName = this.session.outputNames[0];
+          const outputTensor = results[outputName];
+
+          embedding = Array.from(outputTensor.data as Float32Array);
 
           // Normalize the embedding
           embedding = this.normalizeEmbedding(embedding);
 
-          console.log('✅ Real inference completed successfully');
+          console.log('✅ Real ArcFace inference completed successfully');
         } catch (inferenceError) {
-          console.error('❌ Real inference failed, falling back to mock:', inferenceError);
+          console.error('❌ ArcFace inference failed, falling back to mock:', inferenceError);
           embedding = this.generateMockEmbedding();
         }
       } else {
@@ -138,7 +135,7 @@ export class EmbeddingService {
 
       return {
         embedding,
-        confidence: this.model ? 0.95 : 0.85, // Higher confidence for real model
+        confidence: this.session ? 0.95 : 0.85, // Higher confidence for real model
         processingTime
       };
     } catch (error) {
@@ -194,11 +191,8 @@ export class EmbeddingService {
 
   // Dispose resources
   static dispose(): void {
-    if (this.model) {
-      this.model.dispose();
-      this.model = null;
-    }
+    this.session = null;
     this.modelLoaded = false;
-    console.log('🗑️ Model resources disposed');
+    console.log('🗑️ ArcFace session disposed');
   }
 }

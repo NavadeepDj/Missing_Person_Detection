@@ -59,7 +59,13 @@ export function CaseManagementPage() {
       identifiers: [],
       status: 'active',
       dateReported: new Date().toISOString().split('T')[0],
-      caseNumber: `CASE-${Date.now()}`,
+      caseNumber: (() => {
+        const now = new Date();
+        const datePart = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
+        const namePart = newCase.name.trim().replace(/\s+/g, '-');
+        const timestamp = now.getTime();
+        return `${namePart}-${datePart}-${timestamp}`;
+      })(),
       reportedBy: newCase.reportedBy,
       facePhotos: facePhotos.length > 0 ? facePhotos : undefined,
       detectionSettings: {
@@ -100,8 +106,8 @@ export function CaseManagementPage() {
 
   const filteredCases = cases.filter(caseItem => {
     const matchesSearch = caseItem.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         caseItem.caseNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         caseItem.lastKnownLocation.toLowerCase().includes(searchTerm.toLowerCase());
+      caseItem.caseNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      caseItem.lastKnownLocation.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || caseItem.status === statusFilter;
     return matchesSearch && matchesStatus;
   });

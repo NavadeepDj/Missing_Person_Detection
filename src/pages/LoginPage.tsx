@@ -54,6 +54,12 @@ export function LoginPage() {
       role: 'Field Officer', 
       color: 'bg-green-100 text-green-800' 
     },
+    {
+      email: 'citizen@tracevision.com',
+      password: 'citizen123',
+      role: 'Public Citizen',
+      color: 'bg-yellow-100 text-yellow-800'
+    },
   ];
 
   const quickLogin = (credentials: typeof testCredentials[0]) => {

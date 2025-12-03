@@ -73,6 +73,12 @@ export class DatabaseService {
     // Convert embedding array to JSON string for storage
     const embeddingJson = JSON.stringify(faceEmbedding);
 
+    const name = metadata && (metadata as any).name ? String((metadata as any).name) : null;
+    const age = metadata && typeof (metadata as any).age === 'number' ? (metadata as any).age : null;
+    const status = metadata && (metadata as any).status ? String((metadata as any).status) : null;
+    const dateReported = metadata && (metadata as any).dateReported ? String((metadata as any).dateReported) : null;
+    const lastLocation = metadata && (metadata as any).location ? String((metadata as any).location) : null;
+
     const { data, error } = await this.supabase!
       .from('case_details')
       .insert([
@@ -80,6 +86,11 @@ export class DatabaseService {
           Case_id: caseId,
           Face_embedding: embeddingJson,
           created_at: new Date().toISOString(),
+          ...(name && { Name: name }),
+          ...(age !== null && { Age: age }),
+          ...(status && { Status: status }),
+          ...(dateReported && { Date_reported: dateReported }),
+          ...(lastLocation && { Last_location: lastLocation }),
           // Add metadata as JSON if needed
           ...(metadata && { metadata: JSON.stringify(metadata) })
         }
@@ -132,7 +143,7 @@ export class DatabaseService {
 
     const { data, error } = await this.supabase!
       .from('case_details')
-      .select('id, Case_id, Face_embedding, created_at, metadata')
+      .select('id, Case_id, Face_embedding, created_at, metadata, Name, Age, Status, Date_reported, Last_location')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -140,13 +151,26 @@ export class DatabaseService {
     }
 
     // Parse JSON embeddings back to arrays
-    const embeddings = data.map(item => ({
-      id: item.id,
-      caseId: item.Case_id,
-      embedding: JSON.parse(item.Face_embedding),
-      createdAt: item.created_at,
-      metadata: item.metadata ? JSON.parse(item.metadata) : undefined
-    }));
+    const embeddings = data.map(item => {
+      const baseMetadata = item.metadata ? JSON.parse(item.metadata) : {};
+
+      const mergedMetadata = {
+        ...baseMetadata,
+        ...(item.Name && { name: item.Name }),
+        ...(typeof item.Age === 'number' && { age: item.Age }),
+        ...(item.Status && { status: item.Status }),
+        ...(item.Date_reported && { dateReported: item.Date_reported }),
+        ...(item.Last_location && { location: item.Last_location })
+      };
+
+      return {
+        id: item.id,
+        caseId: item.Case_id,
+        embedding: JSON.parse(item.Face_embedding),
+        createdAt: item.created_at,
+        metadata: mergedMetadata
+      };
+    });
 
     console.log(`✅ Retrieved ${embeddings.length} face embeddings from Supabase`);
     return embeddings;
@@ -218,13 +242,27 @@ export class DatabaseService {
 
       const embeddingJson = JSON.stringify(faceEmbedding);
 
+      const name = metadata && (metadata as any).name ? String((metadata as any).name) : null;
+      const age = metadata && typeof (metadata as any).age === 'number' ? (metadata as any).age : null;
+      const status = metadata && (metadata as any).status ? String((metadata as any).status) : null;
+      const dateReported = metadata && (metadata as any).dateReported ? String((metadata as any).dateReported) : null;
+      const lastLocation = metadata && (metadata as any).location ? String((metadata as any).location) : null;
+
+      const updatePayload: Record<string, any> = {
+        Face_embedding: embeddingJson,
+        updated_at: new Date().toISOString(),
+        ...(metadata && { metadata: JSON.stringify(metadata) })
+      };
+
+      if (name !== null) updatePayload.Name = name;
+      if (age !== null) updatePayload.Age = age;
+      if (status !== null) updatePayload.Status = status;
+      if (dateReported !== null) updatePayload.Date_reported = dateReported;
+      if (lastLocation !== null) updatePayload.Last_location = lastLocation;
+
       const { error } = await this.supabase
         .from('case_details')
-        .update({
-          Face_embedding: embeddingJson,
-          updated_at: new Date().toISOString(),
-          ...(metadata && { metadata: JSON.stringify(metadata) })
-        })
+        .update(updatePayload)
         .eq('Case_id', caseId);
 
       if (error) {
@@ -398,6 +436,106 @@ export class DatabaseService {
   }
 
 
+  /**
+   * Create a public alert when a citizen upload matches a missing person
+   */
+  async createAlert(params: {
+    caseId: string;
+    similarity: number;
+    sourceRole: 'citizen' | 'system';
+    latitude?: number;
+    longitude?: number;
+    photoUrl?: string;
+  }): Promise<{ id: string; success: boolean; error?: string }> {
+    const { caseId, similarity, sourceRole, latitude, longitude, photoUrl } = params;
+
+    try {
+      const metadata: any = {
+        similarity,
+        sourceRole,
+      };
+
+      if (typeof latitude === 'number' && typeof longitude === 'number') {
+        metadata.latitude = latitude;
+        metadata.longitude = longitude;
+      }
+
+      const { data, error } = await this.supabase
+        .from('alerts')
+        .insert([
+          {
+            case_id: caseId,
+            similarity,
+            source_role: sourceRole,
+            photo_url: photoUrl || null,
+            location:
+              typeof latitude === 'number' && typeof longitude === 'number'
+                ? `${latitude},${longitude}`
+                : null,
+            metadata,
+          },
+        ])
+        .select('id')
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      return { id: data.id, success: true };
+    } catch (error) {
+      console.error('❌ Error creating alert:', error);
+      return {
+        id: '',
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+
+  /**
+   * Get latest alerts for admin dashboard
+   */
+  async getRecentAlerts(limit: number = 20): Promise<
+    Array<{
+      id: string;
+      caseId: string;
+      similarity: number;
+      sourceRole: string;
+      createdAt: string;
+      location?: string | null;
+      photoUrl?: string | null;
+      metadata?: any;
+    }>
+  > {
+    try {
+      const { data, error } = await this.supabase
+        .from('alerts')
+        .select('id, case_id, similarity, source_role, created_at, location, photo_url, metadata')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        throw error;
+      }
+
+      return (
+        data?.map((item) => ({
+          id: item.id,
+          caseId: item.case_id,
+          similarity: item.similarity,
+          sourceRole: item.source_role,
+          createdAt: item.created_at,
+          location: item.location,
+          photoUrl: item.photo_url,
+          metadata: item.metadata,
+        })) || []
+      );
+    } catch (error) {
+      console.error('❌ Error loading alerts:', error);
+      throw error;
+    }
+  }
 }
 
 // Singleton instance

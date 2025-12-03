@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { AuthProvider } from '@/contexts/AuthContext';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RoleDashboard } from '@/components/RoleDashboard';
 import { PlaceholderPage } from '@/components/PlaceholderPage';
@@ -10,7 +10,20 @@ import { DetectionPage } from '@/pages/DetectionPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { SignupPage } from '@/pages/SignupPage';
 import { HelpSupportPage } from '@/pages/HelpSupportPage';
+import { MissingPersonsPublicPage } from '@/pages/MissingPersonsPublicPage';
 import './App.css';
+
+function MissingPersonsRoute() {
+  const { user } = useAuth();
+
+  // For citizen role (and by default for others), show the real missing persons database
+  if (user?.role === 'citizen') {
+    return <MissingPersonsPublicPage />;
+  }
+
+  // Other roles can also use this page for now
+  return <MissingPersonsPublicPage />;
+}
 
 function App() {
   return (
@@ -19,6 +32,7 @@ function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/" element={<LandingPage />} />
+          <Route path="/public/missing-persons" element={<MissingPersonsPublicPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           
@@ -49,14 +63,7 @@ function App() {
           
           <Route path="/missing-persons" element={
             <ProtectedRoute>
-              <PlaceholderPage 
-                title="Missing Persons Database"
-                description="Search and browse missing persons records"
-                breadcrumbs={[
-                  { title: 'Dashboard', href: '/dashboard' },
-                  { title: 'Missing Persons' }
-                ]}
-              />
+              <MissingPersonsRoute />
             </ProtectedRoute>
           } />
           

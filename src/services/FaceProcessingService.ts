@@ -153,7 +153,14 @@ export class FaceProcessingService {
     caseId: string,
     embedding: number[],
     confidence: number,
-    processingTime: number
+    processingTime: number,
+    extraMetadata?: {
+      name?: string;
+      age?: number;
+      status?: string;
+      dateReported?: string;
+      location?: string;
+    }
   ): Promise<FaceStorageResult> {
     const startTime = performance.now();
 
@@ -161,6 +168,7 @@ export class FaceProcessingService {
       console.log('💾 Storing face embedding for case:', caseId);
 
       const metadata = {
+        ...(extraMetadata || {}),
         confidence,
         processingTime,
         storedAt: new Date().toISOString()
@@ -203,7 +211,17 @@ export class FaceProcessingService {
   /**
    * Process image and store embedding in database (complete pipeline)
    */
-  static async processAndStoreFaceEmbedding(imageUrl: string, caseId: string): Promise<FaceStorageResult> {
+  static async processAndStoreFaceEmbedding(
+    imageUrl: string,
+    caseId: string,
+    extraMetadata?: {
+      name?: string;
+      age?: number;
+      status?: string;
+      dateReported?: string;
+      location?: string;
+    }
+  ): Promise<FaceStorageResult> {
     try {
       console.log('🔄 Starting complete face processing pipeline for case:', caseId);
 
@@ -223,7 +241,8 @@ export class FaceProcessingService {
         caseId,
         processResult.embedding,
         processResult.confidence || 0.0,
-        processResult.processingTime || 0.0
+        processResult.processingTime || 0.0,
+        extraMetadata
       );
 
       console.log('🎉 Complete face processing pipeline finished successfully', {

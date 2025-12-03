@@ -33,6 +33,8 @@
   }
 }
 
+  /* hmr-touch: noop update to trigger reload */
+
 .card {
   padding: 2em;
 }
