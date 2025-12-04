@@ -22,33 +22,26 @@ export interface MatchingResult {
   threshold: number;
 }
 
+const BACKEND_URL = (typeof (globalThis as any) !== 'undefined' && (globalThis as any).ARC_FACE_BACKEND_URL) || 'http://localhost:8000';
+const BACKEND_MODE = !!BACKEND_URL;
+
 export class MatchingService {
-  private static readonly DEFAULT_THRESHOLD = 0.75;
+  // Global default similarity threshold (70%)
+  private static readonly DEFAULT_THRESHOLD = 0.70;
 
-  // Calculate cosine similarity between two face embeddings
-  // Matches Python: 1 - cosine(embedding1, embedding2)
-  // Matches Dart: calculateSimilarity method
-  static calculateSimilarity(embedding1: number[], embedding2: number[]): number {
-    if (embedding1.length !== embedding2.length) {
-      throw new Error('Embeddings must have the same length');
+  static calculateSimilarityLocal(a: number[], b: number[]): number {
+    if (a.length !== b.length) throw new Error('Embeddings must have same dimension');
+    let dot = 0;
+    let n1 = 0;
+    let n2 = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      n1 += a[i] * a[i];
+      n2 += b[i] * b[i];
     }
-
-    let dotProduct = 0.0;
-    let norm1 = 0.0;
-    let norm2 = 0.0;
-
-    for (let i = 0; i < embedding1.length; i++) {
-      dotProduct += embedding1[i] * embedding2[i];
-      norm1 += embedding1[i] * embedding1[i];
-      norm2 += embedding2[i] * embedding2[i];
-    }
-
-    if (norm1 === 0.0 || norm2 === 0.0) {
-      return 0.0;
-    }
-
-    // Cosine similarity: (A·B) / (||A|| × ||B||)
-    return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
+    const denom = Math.sqrt(n1) * Math.sqrt(n2);
+    if (denom === 0) return 0;
+    return dot / denom;
   }
 
   // Find matches for a detected face embedding against a database of known faces
@@ -77,7 +70,7 @@ export class MatchingService {
           continue;
         }
 
-        const similarity = this.calculateSimilarity(detectedEmbedding, knownFace.embedding);
+        const similarity = this.calculateSimilarityLocal(detectedEmbedding, knownFace.embedding);
         const embeddingDistance = 1 - similarity;
 
         if (similarity >= threshold) {
@@ -136,7 +129,7 @@ export class MatchingService {
     confidence: number;
     recommendation: 'match' | 'possible_match' | 'no_match';
   } {
-    const similarity = this.calculateSimilarity(embedding1, embedding2);
+    const similarity = this.calculateSimilarityLocal(embedding1, embedding2);
     const confidence = this.calculateConfidence(similarity, threshold);
 
     let recommendation: 'match' | 'possible_match' | 'no_match';
@@ -211,5 +204,31 @@ export class MatchingService {
       matchRate: totalMatches / totalProcessed,
       averageSimilarity
     };
+  }
+
+  // Optional: use backend Python service to calculate similarity
+  // Kept for future integration; frontend logic uses calculateSimilarityLocal.
+  static async calculateSimilarityWithBackend(a: number[], b: number[]): Promise<number> {
+    // If backend is configured, call /match endpoint
+    try {
+      if (BACKEND_MODE) {
+        const resp = await fetch(`${BACKEND_URL}/match`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ embedding1: a, embedding2: b })
+        });
+        if (!resp.ok) {
+          console.warn('Backend match failed, falling back to local similarity');
+          return this.calculateSimilarityLocal(a, b);
+        }
+        const json = await resp.json();
+        return Number(json.similarity);
+      }
+
+      return this.calculateSimilarityLocal(a, b);
+    } catch (error) {
+      console.error('❌ Error calculating similarity with backend, falling back to local:', error);
+      return this.calculateSimilarityLocal(a, b);
+    }
   }
 }

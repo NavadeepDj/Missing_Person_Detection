@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ArcFace Backend Test</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    .container { max-width: 1000px; margin: 0 auto; }
+    .log { background:#111; color:#0f0; padding:10px; height:220px; overflow:auto; font-family:monospace; font-size:13px; }
+    .panel { border:1px solid #ddd; padding:12px; margin-bottom:12px; border-radius:6px; }
+    .btn { padding:8px 12px; border-radius:4px; cursor:pointer; }
+    .image-wrap { position: relative; display:inline-block; }
+    .overlay-canvas { position: absolute; left: 0; top: 0; pointer-events: none; }
+    .small-img { max-width: 320px; border:1px solid #ccc; display:block; }
+    pre { white-space: pre-wrap; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ArcFace Backend Test UI</h1>
+    <div class="panel">
+      <label>Select two images to test matching:</label><br/>
+      <div style="display:flex; gap:8px; margin-top:8px; align-items:center;">
+        <div>
+          <div style="font-size:12px; margin-bottom:4px">Image A</div>
+          <input id="fileA" type="file" accept="image/*" />
+        </div>
+        <div>
+          <div style="font-size:12px; margin-bottom:4px">Image B</div>
+          <input id="fileB" type="file" accept="image/*" />
+        </div>
+        <div style="margin-left:8px">
+          <button id="processBoth" class="btn">Process Both & Match</button>
+          <button id="clear" class="btn">Clear Log</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div style="display:flex; gap:10px; align-items:flex-start;">
+        <div style="flex:1; display:flex; gap:10px;">
+          <div style="flex:1">
+            <div><strong>Image A (with overlay)</strong></div>
+            <div class="image-wrap">
+              <img id="previewA" src="" style="max-width:100%; max-height:360px; border:1px solid #ccc; display:block;" />
+              <canvas id="overlayA" class="overlay-canvas"></canvas>
+            </div>
+          </div>
+
+          <div style="flex:1">
+            <div><strong>Image B (with overlay)</strong></div>
+            <div class="image-wrap">
+              <img id="previewB" src="" style="max-width:100%; max-height:360px; border:1px solid #ccc; display:block;" />
+              <canvas id="overlayB" class="overlay-canvas"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div style="width:360px">
+          <div><strong>Face Crop Previews (112×112)</strong></div>
+          <div style="display:flex; gap:8px; margin-top:6px">
+            <img id="faceCropA" class="small-img" src="" alt="face crop A" />
+            <img id="faceCropB" class="small-img" src="" alt="face crop B" />
+          </div>
+          <div style="height:12px"></div>
+          <div><strong>Match Result</strong></div>
+          <div id="matchResult" style="background:#fff6f0;padding:8px;margin-top:6px;border-radius:6px;border:1px solid #eee; min-height:80px">
+            <div id="similarityText">No match computed yet</div>
+            <pre id="response" style="background:#f7f7f7;padding:8px;height:180px;overflow:auto;border:1px solid #eee"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div><strong>Debug Log</strong></div>
+      <div id="log" class="log"></div>
+    </div>
+
+    <script>
+      const fileInput = document.getElementById('file');
+    const fileA = document.getElementById('fileA');
+    const fileB = document.getElementById('fileB');
+    const btn = document.getElementById('processBoth');
+    const previewA = document.getElementById('previewA');
+    const previewB = document.getElementById('previewB');
+    const overlayA = document.getElementById('overlayA');
+    const overlayB = document.getElementById('overlayB');
+    const faceCropA = document.getElementById('faceCropA');
+    const faceCropB = document.getElementById('faceCropB');
+      const logEl = document.getElementById('log');
+    const respEl = document.getElementById('response');
+    const similarityText = document.getElementById('similarityText');
+      const clearBtn = document.getElementById('clear');
+
+      function log(msg) {
+        const time = new Date().toLocaleTimeString();
+        logEl.innerText = `[${time}] ${msg}\n` + logEl.innerText;
+      }
+
+      let lastResponse = null;
+
+      function setupPreview(inputEl, previewEl, overlayEl) {
+        inputEl.addEventListener('change', () => {
+          const f = inputEl.files[0];
+          if (!f) return;
+          previewEl.src = URL.createObjectURL(f);
+          previewEl.onload = () => {
+            overlayEl.width = previewEl.clientWidth;
+            overlayEl.height = previewEl.clientHeight;
+            overlayEl.style.width = previewEl.clientWidth + 'px';
+            overlayEl.style.height = previewEl.clientHeight + 'px';
+            overlayEl.style.left = previewEl.offsetLeft + 'px';
+            overlayEl.style.top = previewEl.offsetTop + 'px';
+            const ctx = overlayEl.getContext('2d'); ctx.clearRect(0,0,overlayEl.width, overlayEl.height);
+          };
+          log(`Selected file: ${f.name} (${(f.size/1024).toFixed(1)} KB)`);
+        });
+      }
+
+      setupPreview(fileA, previewA, overlayA);
+      setupPreview(fileB, previewB, overlayB);
+
+      clearBtn.addEventListener('click', () => { logEl.innerText = ''; respEl.innerText = ''; preview.src = ''; faceCrop.src = ''; fileInput.value = null; clearOverlay(); });
+
+      function clearOverlayFor(overlayEl) {
+        const ctx = overlayEl.getContext('2d');
+        ctx.clearRect(0,0,overlayEl.width, overlayEl.height);
+      }
+
+      function drawDebugOverlayFor(debug, previewEl, overlayEl) {
+        if (!debug || !debug.bbox) return;
+        const ctx = overlayEl.getContext('2d');
+        ctx.clearRect(0,0,overlayEl.width, overlayEl.height);
+
+        const bw = previewEl.naturalWidth || previewEl.width;
+        const bh = previewEl.naturalHeight || previewEl.height;
+        const dw = previewEl.clientWidth;
+        const dh = previewEl.clientHeight;
+        if (!bw || !bh) return;
+        const scaleX = dw / bw;
+        const scaleY = dh / bh;
+
+        const [x1,y1,x2,y2] = debug.bbox;
+        const rx = x1 * scaleX;
+        const ry = y1 * scaleY;
+        const rw = (x2 - x1) * scaleX;
+        const rh = (y2 - y1) * scaleY;
+
+        ctx.lineWidth = Math.max(2, Math.floor(Math.min(overlayEl.width, overlayEl.height) / 150));
+        ctx.strokeStyle = 'lime';
+        ctx.fillStyle = 'rgba(0,255,0,0.12)';
+        ctx.fillRect(rx, ry, rw, rh);
+        ctx.strokeRect(rx, ry, rw, rh);
+
+        if (Array.isArray(debug.landmarks)) {
+          ctx.fillStyle = 'red';
+          for (const lm of debug.landmarks) {
+            const lx = lm.x * scaleX;
+            const ly = lm.y * scaleY;
+            ctx.beginPath();
+            ctx.arc(lx, ly, 2 + ctx.lineWidth, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(rx, ry - 20, 140, 18);
+        ctx.fillStyle = 'white';
+        ctx.font = '12px monospace';
+        ctx.fillText('MediaPipe face bbox', rx + 4, ry - 6);
+      }
+
+      btn.addEventListener('click', async () => {
+        const a = fileA.files[0];
+        const b = fileB.files[0];
+        if (!a || !b) { alert('Select both images'); return; }
+
+        log('Processing Image A...');
+        const formA = new FormData(); formA.append('file', a, a.name);
+        let jsonA, jsonB;
+        try {
+          const r1 = await fetch('/process-image', { method: 'POST', body: formA });
+          jsonA = await r1.json();
+          respEl.innerText = 'Image A response:\n' + JSON.stringify(jsonA, null, 2);
+          if (r1.ok) {
+            log('✅ Image A processed');
+            if (jsonA.debug && jsonA.debug.faceCropPreview) { faceCropA.src = jsonA.debug.faceCropPreview; }
+            drawDebugOverlayFor(jsonA.debug, previewA, overlayA);
+          } else { log('❌ Image A failed: ' + JSON.stringify(jsonA)); }
+        } catch (e) { log('❌ Image A network error: ' + e); return; }
+
+        log('Processing Image B...');
+        const formB = new FormData(); formB.append('file', b, b.name);
+        try {
+          const r2 = await fetch('/process-image', { method: 'POST', body: formB });
+          jsonB = await r2.json();
+          respEl.innerText += '\n\nImage B response:\n' + JSON.stringify(jsonB, null, 2);
+          if (r2.ok) {
+            log('✅ Image B processed');
+            if (jsonB.debug && jsonB.debug.faceCropPreview) { faceCropB.src = jsonB.debug.faceCropPreview; }
+            drawDebugOverlayFor(jsonB.debug, previewB, overlayB);
+          } else { log('❌ Image B failed: ' + JSON.stringify(jsonB)); }
+        } catch (e) { log('❌ Image B network error: ' + e); return; }
+
+        // If both succeeded, call /match with embeddings
+        if (jsonA && jsonA.success && jsonA.embedding && jsonB && jsonB.success && jsonB.embedding) {
+          log('Calling /match to compute cosine similarity...');
+          try {
+            const r = await fetch('/match', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ embedding1: jsonA.embedding, embedding2: jsonB.embedding })
+            });
+            const matchJson = await r.json();
+            respEl.innerText += '\n\nMatch response:\n' + JSON.stringify(matchJson, null, 2);
+            const sim = Number(matchJson.similarity || 0);
+            const pct = (sim * 100).toFixed(2);
+            similarityText.innerText = `Cosine similarity: ${sim.toFixed(6)} (${pct}%)`;
+            if (sim > 0.9) {
+              similarityText.style.color = 'green'; similarityText.innerText += ' — HIGH (likely same person)';
+            } else if (sim > 0.7) {
+              similarityText.style.color = 'orange'; similarityText.innerText += ' — MODERATE';
+            } else {
+              similarityText.style.color = 'red'; similarityText.innerText += ' — LOW (different people)';
+            }
+            log('✅ Match computed');
+          } catch (e) { log('❌ Match request failed: ' + e); }
+        } else {
+          log('❌ Could not compute match — embedding missing');
+        }
+      });
+    </script>
+  </div>
+</body>
+</html>

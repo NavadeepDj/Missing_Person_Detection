@@ -306,7 +306,7 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
       const firstName = firstNameRaw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
       const timestamp = Date.now().toString();
       // const caseId = `${firstName}-${datePart}-${timestamp}`;
-      const caseId = `${firstName}-${datePart}`;
+      const caseId = `CASE-${firstName}-${datePart}`;
 
       // Prepare case metadata
       const parsedAge = caseAge ? Number(caseAge) : undefined;

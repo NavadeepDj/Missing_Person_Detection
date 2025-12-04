@@ -11,6 +11,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { SignupPage } from '@/pages/SignupPage';
 import { HelpSupportPage } from '@/pages/HelpSupportPage';
 import { MissingPersonsPublicPage } from '@/pages/MissingPersonsPublicPage';
+import ArcFaceTestPage from '@/pages/ArcFaceTestPage';
 import './App.css';
 
 function MissingPersonsRoute() {
@@ -33,6 +34,7 @@ function App() {
           {/* Public Routes */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/public/missing-persons" element={<MissingPersonsPublicPage />} />
+          <Route path="/test/arcface" element={<ArcFaceTestPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           

@@ -5,9 +5,20 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { MapPin, Clock, Eye, CheckCircle, X, AlertTriangle as LucideAlertTriangle } from 'lucide-react';
+import { MapPin, Clock, Eye, CheckCircle, X, AlertTriangle as LucideAlertTriangle, Navigation } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { databaseService } from '@/services/DatabaseService';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+// Fix Leaflet default marker icons
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+});
 
 interface AlertItem {
   id: string;
@@ -164,12 +175,76 @@ export function AlertsPage() {
                         </div>
                         
                         <div className="grid gap-2 text-sm text-muted-foreground">
-                          {alert.location && (
-                            <div className="flex items-center">
-                              <MapPin className="h-4 w-4 mr-2" />
-                              {alert.location}
-                            </div>
-                          )}
+                          {alert.location && (() => {
+                            // Parse location string "lat,lon" or use metadata
+                            const coords = alert.location.split(',').map(Number);
+                            const lat = alert.metadata?.latitude || coords[0];
+                            const lon = alert.metadata?.longitude || coords[1];
+                            
+                            if (typeof lat === 'number' && typeof lon === 'number' && !isNaN(lat) && !isNaN(lon)) {
+                              return (
+                                <div className="space-y-2">
+                                  <div className="flex items-center">
+                                    <MapPin className="h-4 w-4 mr-2" />
+                                    <span className="font-mono text-xs">{lat.toFixed(5)}, {lon.toFixed(5)}</span>
+                                  </div>
+                                  
+                                  {/* Map Display */}
+                                  <div className="h-48 rounded-md overflow-hidden border border-gray-300">
+                                    <MapContainer
+                                      center={[lat, lon]}
+                                      zoom={15}
+                                      style={{ height: '100%', width: '100%' }}
+                                      zoomControl={true}
+                                      attributionControl={false}
+                                    >
+                                      <TileLayer
+                                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                      />
+                                      <Marker position={[lat, lon]}>
+                                        <Popup>
+                                          Alert Location<br />
+                                          {alert.metadata?.personName || alert.caseId}
+                                        </Popup>
+                                      </Marker>
+                                    </MapContainer>
+                                  </div>
+                                  
+                                  {/* Map Links */}
+                                  <div className="flex flex-wrap gap-2">
+                                    <a
+                                      href={`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=15/${lat}/${lon}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-xs text-blue-600 hover:underline inline-flex items-center space-x-1"
+                                    >
+                                      <span>View on OpenStreetMap</span>
+                                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                      </svg>
+                                    </a>
+                                    <a
+                                      href={`https://www.google.com/maps/search/?api=1&query=${lat},${lon}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-xs text-red-600 hover:underline inline-flex items-center space-x-1"
+                                    >
+                                      <span>Open in Google Maps</span>
+                                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                      </svg>
+                                    </a>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return (
+                              <div className="flex items-center">
+                                <MapPin className="h-4 w-4 mr-2" />
+                                {alert.location}
+                              </div>
+                            );
+                          })()}
                           <div className="flex items-center">
                             <Clock className="h-4 w-4 mr-2" />
                             {new Date(alert.createdAt).toLocaleString()}
