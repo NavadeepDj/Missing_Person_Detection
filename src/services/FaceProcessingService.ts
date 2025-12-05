@@ -232,6 +232,8 @@ export class FaceProcessingService {
             status?: string;
             dateReported?: string;
             location?: string;
+            latitude?: number;
+            longitude?: number;
         }
     ): Promise<FaceStorageResult> {
         const startTime = performance.now();
@@ -292,6 +294,8 @@ export class FaceProcessingService {
             status?: string;
             dateReported?: string;
             location?: string;
+            latitude?: number;
+            longitude?: number;
         }
     ): Promise<FaceStorageResult> {
         try {

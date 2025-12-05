@@ -257,9 +257,27 @@ export function AlertsPage() {
               ) : (
                 <div className="space-y-4">
                   {filteredAlerts.map((alert) => {
-                    const locationParts = alert.location?.split(',').map(Number);
-                    const lat = alert.metadata?.latitude || locationParts?.[0];
-                    const lng = alert.metadata?.longitude || locationParts?.[1];
+                    // Try multiple sources for location: alert.location string, alert.metadata.latitude/longitude
+                    let lat: number | undefined;
+                    let lng: number | undefined;
+                    
+                    // First try alert.location field (format: "lat,lng")
+                    if (alert.location) {
+                      const locationParts = alert.location.split(',').map(Number);
+                      if (locationParts.length === 2 && !isNaN(locationParts[0]) && !isNaN(locationParts[1])) {
+                        lat = locationParts[0];
+                        lng = locationParts[1];
+                      }
+                    }
+                    
+                    // Fallback to metadata latitude/longitude
+                    if ((!lat || !lng) && alert.metadata) {
+                      if (typeof alert.metadata.latitude === 'number' && typeof alert.metadata.longitude === 'number') {
+                        lat = alert.metadata.latitude;
+                        lng = alert.metadata.longitude;
+                      }
+                    }
+                    
                     const hasLocation = typeof lat === 'number' && typeof lng === 'number' && !isNaN(lat) && !isNaN(lng);
                     const { progress, currentStage } = getWorkflowProgress(alert.status as AlertStatus);
 

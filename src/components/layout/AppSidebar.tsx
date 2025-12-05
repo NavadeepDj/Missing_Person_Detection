@@ -68,7 +68,7 @@ const navigation: NavItem[] = [
     title: 'Map View',
     icon: MapPin,
     href: '/map',
-    roles: ['admin', 'case_manager', 'investigator'], // Not for citizens
+    roles: ['case_manager', 'investigator'], // Not for admin or citizens
   },
   {
     title: 'Analytics',

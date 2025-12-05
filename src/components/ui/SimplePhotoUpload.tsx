@@ -157,8 +157,15 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
     reader.onload = async (e) => {
       const photoUrl = e.target?.result as string;
 
-      // Don't add to photos array yet - let processPhotoWithAI handle it
-      await processPhotoWithAI(photoUrl);
+      // Add preview immediately (before processing)
+      const tempPhoto: ProcessedPhoto = {
+        url: photoUrl,
+        // faceDetected is undefined when not yet processed
+      };
+      setPhotos(prev => [...prev, tempPhoto]);
+
+      // Process with AI (will update the photo in state after processing)
+      await processPhotoWithAI(photoUrl, tempPhoto);
     };
     reader.readAsDataURL(file);
   };
@@ -253,8 +260,15 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
         // Stop webcam after capture
         stopWebcam();
 
-        // Trigger AI processing - let it handle adding to photos array
-        processPhotoWithAI(photoUrl);
+        // Add preview immediately
+        const tempPhoto: ProcessedPhoto = {
+          url: photoUrl,
+          // faceDetected is undefined when not yet processed
+        };
+        setPhotos(prev => [...prev, tempPhoto]);
+
+        // Trigger AI processing - will update the photo in state after processing
+        processPhotoWithAI(photoUrl, tempPhoto);
       }
     }
   };
@@ -287,7 +301,7 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
   };
 
   // Real AI Processing with face detection and embedding generation
-  const processPhotoWithAI = async (photoUrl: string) => {
+  const processPhotoWithAI = async (photoUrl: string, tempPhoto?: ProcessedPhoto) => {
     // Validate photoUrl before processing
     if (!photoUrl || !photoUrl.startsWith('data:image/')) {
       console.error('❌ Invalid photo URL provided:', photoUrl);
@@ -308,20 +322,43 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
       // const caseId = `${firstName}-${datePart}-${timestamp}`;
       const caseId = `CASE-${firstName}-${datePart}`;
 
-      // Prepare case metadata
+      // Try to get current GPS location from the browser and EXIF data in parallel
+      const browserLocationPromise = getBrowserLocation();
+      const exifDataPromise = extractExifData(photoUrl);
+
+      // Wait for GPS data (EXIF or browser)
+      const [exifData, browserLocation] = await Promise.all([exifDataPromise, browserLocationPromise]);
+
+      // Prefer EXIF GPS if present; otherwise fall back to browser GPS
+      let latitude: number | undefined;
+      let longitude: number | undefined;
+      let locationString = caseLocation || undefined;
+
+      if (exifData?.latitude && exifData?.longitude) {
+        latitude = exifData.latitude;
+        longitude = exifData.longitude;
+        locationString = `${latitude},${longitude}`;
+        console.log('📍 Using EXIF GPS:', { latitude, longitude });
+      } else if (browserLocation) {
+        latitude = browserLocation.latitude;
+        longitude = browserLocation.longitude;
+        locationString = `${latitude},${longitude}`;
+        console.log('📍 Using browser GPS:', { latitude, longitude });
+      }
+
+      // Prepare case metadata with GPS coordinates
       const parsedAge = caseAge ? Number(caseAge) : undefined;
       const metadata = {
         name: caseName || undefined,
         age: Number.isFinite(parsedAge) ? parsedAge : undefined,
         status: caseStatus || 'active',
-        location: caseLocation || undefined,
-        dateReported: caseDateReported || new Date().toISOString().slice(0, 10)
+        location: locationString,
+        dateReported: caseDateReported || new Date().toISOString().slice(0, 10),
+        latitude,
+        longitude,
       };
 
-      // Try to get current GPS location from the browser in parallel
-      const browserLocationPromise = getBrowserLocation();
-
-      console.log('🚀 Starting real AI processing for case:', caseId);
+      console.log('🚀 Starting real AI processing for case:', caseId, 'with GPS:', { latitude, longitude });
 
       // Process image using real AI services
       setProcessingStatus('🔍 Detecting faces and generating embeddings...');
@@ -330,9 +367,6 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
       const result = await FaceProcessingService.processAndStoreFaceEmbedding(photoUrl, caseId, metadata);
 
       if (result.success) {
-        // Extract EXIF data in parallel
-        const exifDataPromise = extractExifData(photoUrl);
-
         // Update AI statistics
         setAiStats(prev => ({
           ...prev,
@@ -344,19 +378,13 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
         setProcessingStage('complete');
         setProcessingStatus('✅ Face embedding generated and stored in database!');
 
-        // Wait for EXIF data and browser GPS (for fallback)
-        const [exifData, browserLocation] = await Promise.all([exifDataPromise, browserLocationPromise]);
+        // Prepare final EXIF data for display
+        const finalExifData = exifData || (latitude && longitude ? {
+          latitude,
+          longitude
+        } : undefined);
 
-        // Prefer EXIF GPS if present; otherwise fall back to browser GPS
-        let finalExifData = exifData || undefined;
-        if (!finalExifData && browserLocation) {
-          finalExifData = {
-            latitude: browserLocation.latitude,
-            longitude: browserLocation.longitude
-          };
-        }
-
-        // Add processed photo to state
+        // Update the photo in state (replace temp photo if exists, or add new)
         const processedPhoto: ProcessedPhoto = {
           url: photoUrl,
           caseId: result.caseId,
@@ -367,14 +395,21 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
           exifData: finalExifData
         };
 
-        setPhotos(prev => [...prev, processedPhoto]);
+        if (tempPhoto) {
+          // Replace the temp photo with processed photo
+          setPhotos(prev => prev.map(p => p.url === photoUrl ? processedPhoto : p));
+        } else {
+          // Add new processed photo
+          setPhotos(prev => [...prev, processedPhoto]);
+        }
 
         console.log('🎉 AI processing completed successfully', {
           caseId: result.caseId,
           embeddingId: result.embeddingId,
           confidence: result.confidence,
           processingTime: result.processingTime,
-          databaseStorageTime: result.databaseStorageTime
+          databaseStorageTime: result.databaseStorageTime,
+          gps: { latitude, longitude }
         });
 
         // Pass to parent with AI processed flag
@@ -387,9 +422,11 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
       setProcessingStage('error');
       setProcessingStatus(`❌ Processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
 
-      // Don't add failed photos to the gallery - just show error message
-      // User can try uploading again
-      console.log('⚠️ Photo not added to gallery due to processing failure');
+      // Remove temp photo if processing failed
+      if (tempPhoto) {
+        setPhotos(prev => prev.filter(p => p.url !== photoUrl));
+      }
+      console.log('⚠️ Photo removed from gallery due to processing failure');
     } finally {
       // Reset processing state after a delay
       setTimeout(() => {
@@ -740,15 +777,20 @@ export function SimplePhotoUpload({ onPhotoSelect, maxPhotos = 3 }: SimplePhotoU
                     <div className="p-3 bg-white">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center space-x-2">
-                          {photo.faceDetected ? (
+                          {photo.faceDetected === true ? (
                             <>
                               <CheckCircle className="h-4 w-4 text-green-500" />
                               <span className="text-sm font-medium text-green-700">Face Detected</span>
                             </>
-                          ) : (
+                          ) : photo.faceDetected === false && photo.caseId ? (
                             <>
                               <AlertCircle className="h-4 w-4 text-red-500" />
                               <span className="text-sm font-medium text-red-700">Processing Failed</span>
+                            </>
+                          ) : (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></div>
+                              <span className="text-sm font-medium text-blue-700">Processing...</span>
                             </>
                           )}
                           {photo.exifData?.latitude && photo.exifData?.longitude && (

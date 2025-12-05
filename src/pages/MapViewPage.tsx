@@ -10,6 +10,34 @@ import { databaseService } from '@/services/DatabaseService';
 import { FaceProcessingService } from '@/services/FaceProcessingService';
 import { MapPin, User, Calendar, AlertCircle } from 'lucide-react';
 
+// Create custom icon with label support
+const createCustomIcon = (label: string) => {
+  return L.divIcon({
+    className: 'custom-marker',
+    html: `
+      <div style="
+        background-color: #dc2626;
+        color: white;
+        border-radius: 50%;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        font-size: 12px;
+        border: 2px solid white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      ">
+        ${label.charAt(0).toUpperCase()}
+      </div>
+    `,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+    popupAnchor: [0, -15],
+  });
+};
+
 // Fix Leaflet default marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -91,75 +119,87 @@ export function MapViewPage() {
 
         setCases(caseLocations);
       } else if (user?.role === 'investigator') {
-        // Investigator: Get only assigned alerts and their case locations
+        // Investigator: Show ALL assigned alerts with their locations (not just unique cases)
         const alerts = await databaseService.getRecentAlerts(100);
         const assignedAlerts = alerts.filter(a => a.status === 'assigned' || a.status === 'completed');
 
         const caseLocations: CaseLocation[] = [];
-        const processedCaseIds = new Set<string>();
 
         for (const alert of assignedAlerts) {
-          // Skip if we already processed this case
-          if (processedCaseIds.has(alert.caseId)) {
-            continue;
+          // Try to get location from alert first (this is where the alert was created)
+          let lat: number | null = null;
+          let lng: number | null = null;
+
+          // First priority: alert.location field (where the alert was created)
+          if (alert.location) {
+            const alertCoords = alert.location.split(',').map(Number);
+            if (alertCoords.length === 2 && !isNaN(alertCoords[0]) && !isNaN(alertCoords[1])) {
+              lat = alertCoords[0];
+              lng = alertCoords[1];
+            }
           }
 
-          // Get case details
-          try {
-            const caseEmbedding = await databaseService.getFaceEmbedding(alert.caseId);
-            if (!caseEmbedding) continue;
-
-            const metadata = caseEmbedding.metadata || {};
-            const location = metadata.location || '';
-
-            // Try to parse location
-            let lat: number | null = null;
-            let lng: number | null = null;
-
-            // Check if location is in "lat,lng" format
-            if (location && typeof location === 'string') {
-              const coords = location.split(',').map(Number);
-              if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
-                lat = coords[0];
-                lng = coords[1];
-              }
+          // Second priority: alert metadata latitude/longitude
+          if ((!lat || !lng) && alert.metadata) {
+            if (typeof alert.metadata.latitude === 'number' && typeof alert.metadata.longitude === 'number') {
+              lat = alert.metadata.latitude;
+              lng = alert.metadata.longitude;
             }
+          }
 
-            // Check metadata for explicit lat/lng
-            if (!lat || !lng) {
-              if (typeof metadata.latitude === 'number' && typeof metadata.longitude === 'number') {
-                lat = metadata.latitude;
-                lng = metadata.longitude;
-              }
-            }
+          // Fallback: Get case location if alert doesn't have location
+          if (!lat || !lng) {
+            try {
+              const caseEmbedding = await databaseService.getFaceEmbedding(alert.caseId);
+              if (caseEmbedding) {
+                const metadata = caseEmbedding.metadata || {};
+                const location = metadata.location || '';
 
-            // Also check alert location as fallback
-            if (!lat || !lng) {
-              if (alert.location) {
-                const alertCoords = alert.location.split(',').map(Number);
-                if (alertCoords.length === 2 && !isNaN(alertCoords[0]) && !isNaN(alertCoords[1])) {
-                  lat = alertCoords[0];
-                  lng = alertCoords[1];
+                // Check if location is in "lat,lng" format
+                if (location && typeof location === 'string') {
+                  const coords = location.split(',').map(Number);
+                  if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
+                    lat = coords[0];
+                    lng = coords[1];
+                  }
+                }
+
+                // Check metadata for explicit lat/lng
+                if (!lat || !lng) {
+                  if (typeof metadata.latitude === 'number' && typeof metadata.longitude === 'number') {
+                    lat = metadata.latitude;
+                    lng = metadata.longitude;
+                  }
                 }
               }
+            } catch (err) {
+              console.error(`Error loading case ${alert.caseId}:`, err);
+            }
+          }
+
+          // If we have valid coordinates, add to map (show ALL alerts, not just unique cases)
+          if (lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
+            // Get case name for display
+            let caseName = alert.metadata?.personName || alert.caseId;
+            try {
+              const caseEmbedding = await databaseService.getFaceEmbedding(alert.caseId);
+              if (caseEmbedding?.metadata?.name) {
+                caseName = caseEmbedding.metadata.name;
+              }
+            } catch (err) {
+              // Ignore errors, use alert metadata
             }
 
-            // If we have valid coordinates, add to map
-            if (lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
-              caseLocations.push({
-                caseId: alert.caseId,
-                name: metadata.name || metadata.caseName || alert.metadata?.personName || '',
-                age: typeof metadata.age === 'number' ? metadata.age : undefined,
-                status: metadata.status || 'active',
-                dateReported: metadata.dateReported || caseEmbedding.createdAt?.slice(0, 10),
-                latitude: lat,
-                longitude: lng,
-                location,
-              });
-              processedCaseIds.add(alert.caseId);
-            }
-          } catch (err) {
-            console.error(`Error loading case ${alert.caseId}:`, err);
+            caseLocations.push({
+              caseId: `${alert.caseId}-${alert.id}`, // Unique ID for each alert
+              name: caseName,
+              age: alert.metadata?.age || undefined,
+              status: alert.status === 'completed' ? 'found' : 'active',
+              dateReported: alert.createdAt?.slice(0, 10),
+              latitude: lat,
+              longitude: lng,
+              location: alert.location || `${lat},${lng}`,
+            });
           }
         }
 
@@ -253,44 +293,62 @@ export function MapViewPage() {
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     />
-                    {cases.map((caseItem, index) => (
-                      <Marker key={index} position={[caseItem.latitude, caseItem.longitude]}>
-                        <Popup>
-                          <div className="min-w-[200px]">
-                            <div className="font-semibold text-lg mb-2">
-                              {caseItem.name || caseItem.caseId}
-                            </div>
-                            <div className="space-y-1 text-sm">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">Case ID:</span>
-                                <span className="text-muted-foreground">{caseItem.caseId}</span>
+                    {cases.map((caseItem, index) => {
+                      const label = caseItem.name || caseItem.caseId;
+                      const labelChar = label.charAt(0).toUpperCase();
+                      return (
+                        <Marker 
+                          key={index} 
+                          position={[caseItem.latitude, caseItem.longitude]}
+                          icon={createCustomIcon(labelChar)}
+                        >
+                          <Popup>
+                            <div className="min-w-[200px]">
+                              <div className="font-semibold text-lg mb-2">
+                                {caseItem.name || caseItem.caseId}
                               </div>
-                              {caseItem.age && (
+                              <div className="space-y-1 text-sm">
                                 <div className="flex items-center gap-2">
-                                  <User className="h-3 w-3" />
-                                  <span>Age: {caseItem.age}</span>
+                                  <span className="font-medium">Case ID:</span>
+                                  <span className="text-muted-foreground">{caseItem.caseId}</span>
                                 </div>
-                              )}
-                              {caseItem.dateReported && (
-                                <div className="flex items-center gap-2">
-                                  <Calendar className="h-3 w-3" />
-                                  <span>Reported: {caseItem.dateReported}</span>
+                                {caseItem.age && (
+                                  <div className="flex items-center gap-2">
+                                    <User className="h-3 w-3" />
+                                    <span>Age: {caseItem.age}</span>
+                                  </div>
+                                )}
+                                {caseItem.dateReported && (
+                                  <div className="flex items-center gap-2">
+                                    <Calendar className="h-3 w-3" />
+                                    <span>Reported: {caseItem.dateReported}</span>
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-2 mt-2">
+                                  {getStatusBadge(caseItem.status)}
                                 </div>
-                              )}
-                              <div className="flex items-center gap-2 mt-2">
-                                {getStatusBadge(caseItem.status)}
-                              </div>
-                              <div className="flex items-center gap-2 mt-2 pt-2 border-t">
-                                <MapPin className="h-3 w-3 text-red-600" />
-                                <span className="text-xs font-mono">
-                                  {caseItem.latitude.toFixed(5)}, {caseItem.longitude.toFixed(5)}
-                                </span>
+                                <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+                                  <MapPin className="h-3 w-3 text-red-600" />
+                                  <span className="text-xs font-mono">
+                                    {caseItem.latitude.toFixed(5)}, {caseItem.longitude.toFixed(5)}
+                                  </span>
+                                </div>
+                                <div className="mt-2 pt-2 border-t">
+                                  <a
+                                    href={`https://www.google.com/maps/search/?api=1&query=${caseItem.latitude},${caseItem.longitude}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-xs text-blue-600 hover:underline"
+                                  >
+                                    Open in Google Maps →
+                                  </a>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </Popup>
-                      </Marker>
-                    ))}
+                          </Popup>
+                        </Marker>
+                      );
+                    })}
                   </MapContainer>
                 </div>
 
