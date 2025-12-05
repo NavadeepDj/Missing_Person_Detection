@@ -477,6 +477,7 @@ export class DatabaseService {
                             typeof latitude === 'number' && typeof longitude === 'number'
                                 ? `${latitude},${longitude}`
                                 : null,
+                        status: 'pending', // Initial status: pending admin review
                         metadata,
                     },
                 ])
@@ -507,6 +508,10 @@ export class DatabaseService {
             caseId: string;
             similarity: number;
             sourceRole: string;
+            status: string;
+            assignedTo?: string;
+            assignedAt?: string;
+            completedAt?: string;
             createdAt: string;
             location?: string | null;
             photoUrl?: string | null;
@@ -516,7 +521,7 @@ export class DatabaseService {
         try {
             const { data, error } = await this.supabase
                 .from('alerts')
-                .select('id, case_id, similarity, source_role, created_at, location, photo_url, metadata')
+                .select('id, case_id, similarity, source_role, status, assigned_to, assigned_at, completed_at, created_at, location, photo_url, metadata')
                 .order('created_at', { ascending: false })
                 .limit(limit);
 
@@ -530,6 +535,10 @@ export class DatabaseService {
                     caseId: item.case_id,
                     similarity: item.similarity,
                     sourceRole: item.source_role,
+                    status: item.status || 'pending',
+                    assignedTo: item.assigned_to || undefined,
+                    assignedAt: item.assigned_at || undefined,
+                    completedAt: item.completed_at || undefined,
                     createdAt: item.created_at,
                     location: item.location,
                     photoUrl: item.photo_url,
@@ -539,6 +548,87 @@ export class DatabaseService {
         } catch (error) {
             console.error('❌ Error loading alerts:', error);
             throw error;
+        }
+    }
+
+    /**
+     * Update alert status - assign to field officer
+     */
+    async assignAlert(alertId: string, assignedToUserId: string): Promise<{ success: boolean; error?: string }> {
+        try {
+            const { error } = await this.supabase
+                .from('alerts')
+                .update({
+                    status: 'assigned',
+                    assigned_to: assignedToUserId,
+                    assigned_at: new Date().toISOString(),
+                })
+                .eq('id', alertId);
+
+            if (error) {
+                throw error;
+            }
+
+            return { success: true };
+        } catch (error) {
+            console.error('❌ Error assigning alert:', error);
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error',
+            };
+        }
+    }
+
+    /**
+     * Mark alert as completed by field officer
+     */
+    async completeAlert(alertId: string): Promise<{ success: boolean; error?: string }> {
+        try {
+            const { error } = await this.supabase
+                .from('alerts')
+                .update({
+                    status: 'completed',
+                    completed_at: new Date().toISOString(),
+                })
+                .eq('id', alertId);
+
+            if (error) {
+                throw error;
+            }
+
+            return { success: true };
+        } catch (error) {
+            console.error('❌ Error completing alert:', error);
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error',
+            };
+        }
+    }
+
+    /**
+     * Reject alert (mark as false positive)
+     */
+    async rejectAlert(alertId: string): Promise<{ success: boolean; error?: string }> {
+        try {
+            const { error } = await this.supabase
+                .from('alerts')
+                .update({
+                    status: 'rejected',
+                })
+                .eq('id', alertId);
+
+            if (error) {
+                throw error;
+            }
+
+            return { success: true };
+        } catch (error) {
+            console.error('❌ Error rejecting alert:', error);
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error',
+            };
         }
     }
 }

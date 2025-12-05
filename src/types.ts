@@ -50,6 +50,24 @@ export interface Alert {
   verifiedBy?: string;
 }
 
+// Alert workflow status
+export type AlertStatus = 'pending' | 'assigned' | 'completed' | 'rejected';
+
+export interface AlertWorkflow {
+  id: string;
+  caseId: string;
+  similarity: number;
+  sourceRole: string;
+  status: AlertStatus;
+  assignedTo?: string;
+  assignedAt?: string;
+  completedAt?: string;
+  createdAt: string;
+  location?: string | null;
+  photoUrl?: string | null;
+  metadata?: any;
+}
+
 export interface Camera {
   id: string;
   name: string;

@@ -62,11 +62,13 @@ const navigation: NavItem[] = [
     title: 'Missing Persons',
     icon: Search,
     href: '/missing-persons',
+    roles: ['citizen', 'investigator'], // Only for citizens and investigators (not admin - they have Case Management)
   },
   {
     title: 'Map View',
     icon: MapPin,
     href: '/map',
+    roles: ['admin', 'case_manager', 'investigator'], // Not for citizens
   },
   {
     title: 'Analytics',
@@ -108,9 +110,14 @@ function SidebarNav() {
   const { user } = useAuth();
   const { state } = useSidebar();
 
-  const filteredNavigation = navigation.filter(item => 
-    !item.roles || item.roles.includes(user?.role || '')
-  );
+  const filteredNavigation = navigation.filter(item => {
+    // If no roles specified, show to all authenticated users
+    if (!item.roles) {
+      return true;
+    }
+    // If roles specified, check if user's role is included
+    return item.roles.includes(user?.role || '');
+  });
 
   const filteredAdminNavigation = adminNavigation.filter(item => 
     !item.roles || item.roles.includes(user?.role || '')

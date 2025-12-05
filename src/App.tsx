@@ -3,6 +3,8 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RoleDashboard } from '@/components/RoleDashboard';
 import { PlaceholderPage } from '@/components/PlaceholderPage';
+import { MapViewPage } from '@/pages/MapViewPage';
+import { AnalyticsPage } from '@/pages/AnalyticsPage';
 import { LandingPage } from '@/pages/LandingPage';
 import { CasesPage } from '@/pages/CasesPage';
 import { AlertsPage } from '@/pages/AlertsPage';
@@ -17,13 +19,38 @@ import './App.css';
 function MissingPersonsRoute() {
   const { user } = useAuth();
 
-  // For citizen role (and by default for others), show the real missing persons database
-  if (user?.role === 'citizen') {
+  // Only citizens and investigators can access missing persons database
+  // Admin and case managers use Case Management instead
+  if (user?.role === 'citizen' || user?.role === 'investigator') {
     return <MissingPersonsPublicPage />;
   }
 
-  // Other roles can also use this page for now
-  return <MissingPersonsPublicPage />;
+  // Redirect others to their dashboard
+  return <RoleDashboard />;
+}
+
+function CasesRoute() {
+  const { user } = useAuth();
+
+  // Only admin and case_manager can access case management
+  if (user?.role === 'admin' || user?.role === 'case_manager') {
+    return <CasesPage />;
+  }
+
+  // Redirect others to their dashboard
+  return <RoleDashboard />;
+}
+
+function MapViewRoute() {
+  const { user } = useAuth();
+
+  // Only admin, case_manager, and investigator can access map view
+  if (user?.role === 'admin' || user?.role === 'case_manager' || user?.role === 'investigator') {
+    return <MapViewPage />;
+  }
+
+  // Redirect citizens to their dashboard
+  return <RoleDashboard />;
 }
 
 function App() {
@@ -47,7 +74,7 @@ function App() {
           
           <Route path="/cases" element={
             <ProtectedRoute>
-              <CasesPage />
+              <CasesRoute />
             </ProtectedRoute>
           } />
           
@@ -71,27 +98,13 @@ function App() {
           
           <Route path="/map" element={
             <ProtectedRoute>
-              <PlaceholderPage 
-                title="Detection Map"
-                description="Geographic view of detection locations and camera coverage"
-                breadcrumbs={[
-                  { title: 'Dashboard', href: '/dashboard' },
-                  { title: 'Map View' }
-                ]}
-              />
+              <MapViewRoute />
             </ProtectedRoute>
           } />
           
           <Route path="/analytics" element={
             <ProtectedRoute>
-              <PlaceholderPage 
-                title="Analytics & Reports"
-                description="System performance metrics and detection analytics"
-                breadcrumbs={[
-                  { title: 'Dashboard', href: '/dashboard' },
-                  { title: 'Analytics' }
-                ]}
-              />
+              <AnalyticsPage />
             </ProtectedRoute>
           } />
           

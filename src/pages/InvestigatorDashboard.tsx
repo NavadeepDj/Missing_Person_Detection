@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Layout } from '@/components/layout/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,131 +21,153 @@ import {
   FileText
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { databaseService } from '@/services/DatabaseService';
 
 export function InvestigatorDashboard() {
   const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    assignedAlerts: 0,
+    activeAlerts: 0,
+    completedToday: 0,
+  });
+  const [assignedAlerts, setAssignedAlerts] = useState<any[]>([]);
+  const [assignedCases, setAssignedCases] = useState<any[]>([]);
+
+  useEffect(() => {
+    loadDashboardData();
+    // Refresh every 30 seconds
+    const interval = setInterval(loadDashboardData, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+
+      // Fetch all alerts
+      const alerts = await databaseService.getRecentAlerts(100);
+
+      // Filter for assigned alerts (investigator sees all assigned, not just to them)
+      const assigned = alerts.filter(a => a.status === 'assigned' || a.status === 'completed');
+      
+      // Get today's date
+      const today = new Date().toISOString().split('T')[0];
+      const completedToday = alerts.filter(a => {
+        if (a.status !== 'completed' || !a.completedAt) return false;
+        const completedDate = new Date(a.completedAt).toISOString().split('T')[0];
+        return completedDate === today;
+      }).length;
+
+      setStats({
+        assignedAlerts: assigned.length,
+        activeAlerts: alerts.filter(a => a.status === 'assigned').length,
+        completedToday,
+      });
+
+      // Get assigned alerts with details
+      const activeAssigned = alerts
+        .filter(a => a.status === 'assigned')
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 5);
+
+      setAssignedAlerts(activeAssigned);
+
+      // Get unique case IDs from assigned alerts and fetch case details
+      const uniqueCaseIds = [...new Set(assigned.map(a => a.caseId))];
+      const casesData = [];
+
+      for (const caseId of uniqueCaseIds.slice(0, 5)) {
+        try {
+          const caseData = await databaseService.getFaceEmbedding(caseId);
+          if (caseData) {
+            const metadata = caseData.metadata || {};
+            casesData.push({
+              id: caseId,
+              name: metadata.name || metadata.caseName || caseId,
+              age: typeof metadata.age === 'number' ? metadata.age : undefined,
+              status: metadata.status || 'active',
+              location: metadata.location || '',
+              createdAt: caseData.createdAt,
+            });
+          }
+        } catch (err) {
+          console.error(`Error loading case ${caseId}:`, err);
+        }
+      }
+
+      setAssignedCases(casesData);
+    } catch (err) {
+      console.error('❌ Failed to load dashboard data', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatTimeAgo = (timestamp: string) => {
+    const now = new Date();
+    const time = new Date(timestamp);
+    const diffMs = now.getTime() - time.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${diffDays}d ago`;
+  };
+
+  const getPriorityBadge = (similarity: number) => {
+    if (similarity >= 0.9) {
+      return <Badge className="bg-red-100 text-red-800">High Priority</Badge>;
+    } else if (similarity >= 0.7) {
+      return <Badge className="bg-yellow-100 text-yellow-800">Medium</Badge>;
+    }
+    return <Badge className="bg-gray-100 text-gray-800">Low</Badge>;
+  };
 
   const fieldStats = [
     {
-      title: 'Assigned Cases',
-      value: 6,
-      change: '2 high priority',
+      title: 'Assigned Alerts',
+      value: stats.assignedAlerts,
+      change: `${stats.activeAlerts} active`,
       icon: Search,
       color: 'text-blue-600',
       bg: 'bg-blue-50'
     },
     {
       title: 'Active Alerts',
-      value: 4,
+      value: stats.activeAlerts,
       change: 'Require field response',
       icon: AlertTriangle,
       color: 'text-red-600',
       bg: 'bg-red-50'
     },
     {
-      title: 'Verifications Today',
-      value: 12,
-      change: '8 confirmed, 4 false',
+      title: 'Completed Today',
+      value: stats.completedToday,
+      change: 'Resolved today',
       icon: CheckCircle,
       color: 'text-green-600',
       bg: 'bg-green-50'
     },
     {
-      title: 'Current Location',
-      value: 'Zone 3',
-      change: 'Downtown District',
+      title: 'Success Rate',
+      value: stats.assignedAlerts > 0 
+        ? `${Math.round((stats.completedToday / stats.assignedAlerts) * 100)}%`
+        : '0%',
+      change: 'Today\'s completion',
       icon: MapPin,
       color: 'text-purple-600',
       bg: 'bg-purple-50'
     },
   ];
 
-  const assignedCases = [
-    {
-      id: 'CASE-2024-089',
-      name: 'Emma Rodriguez',
-      age: 16,
-      priority: 'high',
-      lastSeen: 'Downtown Mall',
-      timeAssigned: '2 hours ago',
-      manager: 'Detective Johnson'
-    },
-    {
-      id: 'CASE-2024-087',
-      name: 'Michael Thompson',
-      age: 34,
-      priority: 'medium',
-      lastSeen: 'Central Station',
-      timeAssigned: '1 day ago',
-      manager: 'Detective Smith'
-    },
-    {
-      id: 'CASE-2024-085',
-      name: 'David Wilson',
-      age: 28,
-      priority: 'high',
-      lastSeen: 'University Campus',
-      timeAssigned: '3 hours ago',
-      manager: 'Detective Johnson'
-    },
-  ];
-
-  const activeAlerts = [
-    {
-      id: '1',
-      caseName: 'Emma Rodriguez',
-      location: 'Shopping Center - Camera 15',
-      address: '1245 Main Street',
-      confidence: 92,
-      time: '15 minutes ago',
-      distance: '0.8 km away',
-      status: 'urgent'
-    },
-    {
-      id: '2',
-      caseName: 'David Wilson',
-      location: 'Bus Terminal - Camera 3',
-      address: '789 Transit Ave',
-      confidence: 89,
-      time: '35 minutes ago',
-      distance: '2.1 km away',
-      status: 'new'
-    },
-    {
-      id: '3',
-      caseName: 'Michael Thompson',
-      location: 'Park Entrance - Camera 8',
-      address: '456 Park Road',
-      confidence: 87,
-      time: '1 hour ago',
-      distance: '1.5 km away',
-      status: 'new'
-    },
-  ];
-
-  const getPriorityBadge = (priority: string) => {
-    switch (priority) {
-      case 'high':
-        return <Badge className="bg-red-100 text-red-800">High Priority</Badge>;
-      case 'medium':
-        return <Badge className="bg-yellow-100 text-yellow-800">Medium</Badge>;
-      case 'low':
-        return <Badge className="bg-gray-100 text-gray-800">Low</Badge>;
-      default:
-        return <Badge variant="outline">{priority}</Badge>;
-    }
-  };
-
-  const getAlertStatusBadge = (status: string) => {
-    switch (status) {
-      case 'urgent':
-        return <Badge className="bg-red-500 text-white animate-pulse">URGENT</Badge>;
-      case 'new':
-        return <Badge variant="destructive">New</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
-    }
-  };
+  // Get highest priority alert
+  const urgentAlert = assignedAlerts.length > 0
+    ? assignedAlerts.sort((a, b) => b.similarity - a.similarity)[0]
+    : null;
 
   return (
     <Layout 
@@ -169,31 +192,34 @@ export function InvestigatorDashboard() {
             </div>
             <div className="text-right">
               <p className="text-sm text-green-200">{user?.organization}</p>
-              <div className="flex items-center mt-1">
-                <div className="h-2 w-2 bg-green-300 rounded-full mr-2"></div>
-                <p className="text-sm font-semibold">On Duty</p>
+              <div className="flex items-center mt-1 justify-end">
+                <div className="h-2 w-2 bg-green-300 rounded-full mr-2 animate-pulse"></div>
+                <p className="text-sm font-semibold">Real-time</p>
               </div>
             </div>
           </div>
         </motion.div>
 
         {/* Urgent Alert Banner */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.1 }}
-        >
-          <Alert className="border-red-200 bg-red-50">
-            <AlertTriangle className="h-4 w-4 text-red-600" />
-            <AlertDescription className="text-red-800">
-              <strong>URGENT:</strong> High confidence detection of Emma Rodriguez at Shopping Center (0.8km away). 
-              Immediate response requested.
-              <Button size="sm" className="ml-4 bg-red-600 hover:bg-red-700">
-                Respond Now
-              </Button>
-            </AlertDescription>
-          </Alert>
-        </motion.div>
+        {urgentAlert && urgentAlert.similarity >= 0.85 && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.1 }}
+          >
+            <Alert className="border-red-200 bg-red-50">
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+              <AlertDescription className="text-red-800">
+                <strong>HIGH PRIORITY:</strong> {urgentAlert.metadata?.personName || urgentAlert.caseId} 
+                detected with {(urgentAlert.similarity * 100).toFixed(1)}% match confidence.
+                {urgentAlert.location && ` Location: ${urgentAlert.location}`}
+                <Button size="sm" className="ml-4 bg-red-600 hover:bg-red-700" onClick={() => window.location.href = '/alerts'}>
+                  View Alert
+                </Button>
+              </AlertDescription>
+            </Alert>
+          </motion.div>
+        )}
 
         {/* Field Stats */}
         <motion.div
@@ -219,10 +245,16 @@ export function InvestigatorDashboard() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{stat.value}</div>
-                  <p className="text-xs text-muted-foreground">
-                    {stat.change}
-                  </p>
+                  {loading ? (
+                    <div className="text-2xl font-bold text-gray-300">...</div>
+                  ) : (
+                    <>
+                      <div className="text-2xl font-bold">{stat.value}</div>
+                      <p className="text-xs text-muted-foreground">
+                        {stat.change}
+                      </p>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             </motion.div>
@@ -245,55 +277,83 @@ export function InvestigatorDashboard() {
                       Detections requiring immediate field verification
                     </CardDescription>
                   </div>
-                  <Badge variant="destructive">4 Active</Badge>
+                  <Badge variant="destructive">{stats.activeAlerts} Active</Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                {activeAlerts.map((alert) => (
-                  <motion.div
-                    key={alert.id}
-                    whileHover={{ scale: 1.02 }}
-                    className="border rounded-lg p-4 hover:shadow-md transition-all"
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <h4 className="font-semibold">{alert.caseName}</h4>
-                        <p className="text-sm text-gray-600">{alert.location}</p>
-                        <p className="text-xs text-gray-500">{alert.address}</p>
+                {loading ? (
+                  <div className="py-6 text-center text-sm text-gray-500">Loading...</div>
+                ) : assignedAlerts.length === 0 ? (
+                  <div className="py-6 text-center text-sm text-gray-500">No active alerts</div>
+                ) : (
+                  assignedAlerts.map((alert) => (
+                    <motion.div
+                      key={alert.id}
+                      whileHover={{ scale: 1.02 }}
+                      className="border rounded-lg p-4 hover:shadow-md transition-all"
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <h4 className="font-semibold">
+                            {alert.metadata?.personName || alert.caseId}
+                          </h4>
+                          <p className="text-sm text-gray-600">{alert.caseId}</p>
+                          {alert.location && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              <MapPin className="h-3 w-3 inline mr-1" />
+                              {alert.location}
+                            </p>
+                          )}
+                        </div>
+                        {getPriorityBadge(alert.similarity)}
                       </div>
-                      {getAlertStatusBadge(alert.status)}
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 mb-3">
-                      <div className="flex items-center">
-                        <Clock className="h-3 w-3 mr-1" />
-                        {alert.time}
+                      
+                      <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 mb-3">
+                        <div className="flex items-center">
+                          <Clock className="h-3 w-3 mr-1" />
+                          {formatTimeAgo(alert.createdAt)}
+                        </div>
+                        <div className="flex items-center">
+                          <User className="h-3 w-3 mr-1" />
+                          {alert.sourceRole === 'citizen' ? 'Citizen' : 'System'}
+                        </div>
                       </div>
-                      <div className="flex items-center">
-                        <Navigation className="h-3 w-3 mr-1" />
-                        {alert.distance}
+                      
+                      <div className="mb-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-medium">Match Confidence</span>
+                          <span className="text-xs font-medium">{(alert.similarity * 100).toFixed(1)}%</span>
+                        </div>
+                        <Progress value={alert.similarity * 100} className="h-2" />
                       </div>
-                    </div>
-                    
-                    <div className="mb-3">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-medium">Confidence</span>
-                        <span className="text-xs font-medium">{alert.confidence}%</span>
+                      
+                      <div className="flex space-x-2">
+                        <Button 
+                          size="sm" 
+                          className="flex-1"
+                          onClick={() => window.location.href = '/alerts'}
+                        >
+                          <Eye className="h-3 w-3 mr-1" />
+                          View Details
+                        </Button>
+                        {alert.location && (
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => {
+                              const coords = alert.location?.split(',').map(Number);
+                              if (coords && coords.length === 2) {
+                                window.open(`https://www.google.com/maps/search/?api=1&query=${coords[0]},${coords[1]}`, '_blank');
+                              }
+                            }}
+                          >
+                            <Navigation className="h-3 w-3" />
+                          </Button>
+                        )}
                       </div>
-                      <Progress value={alert.confidence} className="h-2" />
-                    </div>
-                    
-                    <div className="flex space-x-2">
-                      <Button size="sm" className="flex-1">
-                        <Navigation className="h-3 w-3 mr-1" />
-                        Navigate
-                      </Button>
-                      <Button size="sm" variant="outline">
-                        <Eye className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </motion.div>
-                ))}
+                    </motion.div>
+                  ))
+                )}
               </CardContent>
             </Card>
           </motion.div>
@@ -312,45 +372,57 @@ export function InvestigatorDashboard() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {assignedCases.map((caseItem) => (
-                  <div key={caseItem.id} className="border rounded-lg p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <div className="flex items-center space-x-2 mb-1">
-                          <h4 className="font-semibold">{caseItem.name}</h4>
-                          <span className="text-sm text-gray-500">({caseItem.age} years)</span>
+                {loading ? (
+                  <div className="py-6 text-center text-sm text-gray-500">Loading...</div>
+                ) : assignedCases.length === 0 ? (
+                  <div className="py-6 text-center text-sm text-gray-500">No assigned cases</div>
+                ) : (
+                  assignedCases.map((caseItem) => (
+                    <div key={caseItem.id} className="border rounded-lg p-4">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <div className="flex items-center space-x-2 mb-1">
+                            <h4 className="font-semibold">{caseItem.name}</h4>
+                            {caseItem.age && (
+                              <span className="text-sm text-gray-500">({caseItem.age} years)</span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-600">{caseItem.id}</p>
                         </div>
-                        <p className="text-sm text-gray-600">{caseItem.id}</p>
+                        <Badge 
+                          variant={caseItem.status === 'active' ? 'destructive' : 'outline'}
+                        >
+                          {caseItem.status}
+                        </Badge>
                       </div>
-                      {getPriorityBadge(caseItem.priority)}
+                      
+                      <div className="space-y-2 text-sm text-gray-600 mb-3">
+                        {caseItem.location && (
+                          <div className="flex items-center">
+                            <MapPin className="h-3 w-3 mr-1" />
+                            Location: {caseItem.location}
+                          </div>
+                        )}
+                        <div className="flex items-center">
+                          <Clock className="h-3 w-3 mr-1" />
+                          Created: {formatTimeAgo(caseItem.createdAt)}
+                        </div>
+                      </div>
+                      
+                      <div className="flex space-x-2">
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="flex-1"
+                          onClick={() => window.location.href = '/missing-persons'}
+                        >
+                          <Eye className="h-3 w-3 mr-1" />
+                          View Details
+                        </Button>
+                      </div>
                     </div>
-                    
-                    <div className="space-y-2 text-sm text-gray-600 mb-3">
-                      <div className="flex items-center">
-                        <MapPin className="h-3 w-3 mr-1" />
-                        Last seen: {caseItem.lastSeen}
-                      </div>
-                      <div className="flex items-center">
-                        <Clock className="h-3 w-3 mr-1" />
-                        Assigned: {caseItem.timeAssigned}
-                      </div>
-                      <div className="flex items-center">
-                        <User className="h-3 w-3 mr-1" />
-                        Manager: {caseItem.manager}
-                      </div>
-                    </div>
-                    
-                    <div className="flex space-x-2">
-                      <Button size="sm" variant="outline" className="flex-1">
-                        <Eye className="h-3 w-3 mr-1" />
-                        View Details
-                      </Button>
-                      <Button size="sm" variant="outline">
-                        <Camera className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </CardContent>
             </Card>
           </motion.div>
@@ -371,62 +443,38 @@ export function InvestigatorDashboard() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Button className="h-16 flex-col space-y-2" variant="outline">
-                  <Camera className="h-5 w-5" />
-                  <span className="text-sm">Photo Report</span>
+                <Button 
+                  className="h-16 flex-col space-y-2" 
+                  variant="outline"
+                  onClick={() => window.location.href = '/alerts'}
+                >
+                  <AlertTriangle className="h-5 w-5" />
+                  <span className="text-sm">View Alerts</span>
                 </Button>
-                <Button className="h-16 flex-col space-y-2" variant="outline">
+                <Button 
+                  className="h-16 flex-col space-y-2" 
+                  variant="outline"
+                  onClick={() => window.location.href = '/map'}
+                >
                   <MapPin className="h-5 w-5" />
-                  <span className="text-sm">Mark Location</span>
+                  <span className="text-sm">Map View</span>
                 </Button>
-                <Button className="h-16 flex-col space-y-2" variant="outline">
-                  <Phone className="h-5 w-5" />
-                  <span className="text-sm">Call Dispatch</span>
+                <Button 
+                  className="h-16 flex-col space-y-2" 
+                  variant="outline"
+                  onClick={() => window.location.href = '/missing-persons'}
+                >
+                  <Search className="h-5 w-5" />
+                  <span className="text-sm">Cases</span>
                 </Button>
-                <Button className="h-16 flex-col space-y-2" variant="outline">
+                <Button 
+                  className="h-16 flex-col space-y-2" 
+                  variant="outline"
+                  onClick={() => window.location.href = '/alerts'}
+                >
                   <FileText className="h-5 w-5" />
-                  <span className="text-sm">File Report</span>
+                  <span className="text-sm">Reports</span>
                 </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Communication Panel */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-        >
-          <Card>
-            <CardHeader>
-              <CardTitle>Communication</CardTitle>
-              <CardDescription>
-                Recent messages and coordination updates
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {[
-                  { from: 'Detective Johnson', message: 'Emma Rodriguez case - check shopping center security footage', time: '10 min ago', urgent: true },
-                  { from: 'Dispatch', message: 'New alert for David Wilson case in your area', time: '25 min ago', urgent: false },
-                  { from: 'Detective Smith', message: 'Michael Thompson case update - witness statement received', time: '1 hour ago', urgent: false },
-                ].map((msg, index) => (
-                  <div key={index} className={`p-3 rounded-lg border ${msg.urgent ? 'border-red-200 bg-red-50' : 'border-gray-200'}`}>
-                    <div className="flex items-start justify-between mb-1">
-                      <p className="font-medium text-sm">{msg.from}</p>
-                      <div className="flex items-center">
-                        {msg.urgent && <Badge variant="destructive" className="mr-2 text-xs">Urgent</Badge>}
-                        <span className="text-xs text-gray-500">{msg.time}</span>
-                      </div>
-                    </div>
-                    <p className="text-sm text-gray-700">{msg.message}</p>
-                    <Button size="sm" variant="ghost" className="mt-2 p-0 h-auto">
-                      <MessageSquare className="h-3 w-3 mr-1" />
-                      Reply
-                    </Button>
-                  </div>
-                ))}
               </div>
             </CardContent>
           </Card>
