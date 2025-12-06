@@ -92,10 +92,7 @@ export class FaceDetectionService {
 
       // Detect faces using MediaPipe
       console.log('🔍 Running MediaPipe face detection...');
-      const detections = await this.detector!.estimateFaces(image, {
-        flipHorizontal: false,
-        staticImageMode: true,
-      });
+      const detections = await this.detector!.estimateFaces(image);
 
       const processingTime = performance.now() - startTime;
 

@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FaceProcessingService } from '@/services/FaceProcessingService';
 import { databaseService } from '@/services/DatabaseService';
-import { MatchingService } from '@/services/faceRecognition/MatchingService';
+
 import { AlertTriangle, CheckCircle, Camera, Upload } from 'lucide-react';
 
 interface MissingCase {
@@ -298,7 +298,7 @@ export function MissingPersonsPublicPage() {
       }
 
       const queryEmbedding = processResult.embedding;
-      const isLikelyMock = processResult.confidence < 0.9;
+      const isLikelyMock = (processResult.confidence || 0) < 0.9;
 
       console.log('✅ Generated embedding from captured photo:', {
         dimensions: queryEmbedding.length,

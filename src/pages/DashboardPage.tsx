@@ -4,18 +4,14 @@ import { Layout } from '@/components/layout/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { 
   Users, 
   AlertTriangle, 
   Eye, 
-  CheckCircle, 
   Clock,
-  TrendingUp,
   MapPin,
   Camera,
-  Search,
-  Plus
+  Search
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { FaceProcessingService } from '@/services/FaceProcessingService';
@@ -78,7 +74,7 @@ export function DashboardPage() {
     }
   };
 
-  const formatTimeAgo = (timestamp: string) => {
+  const _formatTimeAgo = (timestamp: string) => {
     const now = new Date();
     const time = new Date(timestamp);
     const diffMs = now.getTime() - time.getTime();

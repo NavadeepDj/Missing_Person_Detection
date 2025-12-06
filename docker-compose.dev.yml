@@ -1,0 +1,34 @@
+# ============================================
+# TraceVision - Development Docker Compose
+# ============================================
+# 
+# Usage (Development with hot reload):
+#   docker-compose -f docker-compose.dev.yml up
+#   docker-compose -f docker-compose.dev.yml logs -f
+#
+# ============================================
+
+services:
+  tracevision-dev:
+    # Service name
+    build:
+      context: .                  # Build from current directory
+      dockerfile: Dockerfile.dev  # Use development Dockerfile
+    ports:
+      - "5173:5173"              # Access at http://localhost:5173
+    volumes:
+      - .:/app                   # Mount entire project for live reload
+      - /app/node_modules        # Don't sync node_modules (use container's)
+    environment:
+      # Load environment variables from .env file
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+    restart: unless-stopped      # Auto-restart if container crashes
+    container_name: tracevision-dev
+
+# Notes:
+# - Hot reload enabled: changes to code automatically refresh the browser
+# - Slower startup than production build
+# - Use this only during development
+# - Changes to package.json require rebuild: docker-compose -f docker-compose.dev.yml up --build
+

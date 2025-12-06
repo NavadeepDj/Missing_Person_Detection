@@ -1,21 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '@/components/layout/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { 
   Users, 
   AlertTriangle, 
   CheckCircle, 
   Clock,
-  TrendingUp,
-  TrendingDown,
-  Activity,
-  MapPin,
   UserCheck,
-  X,
-  BarChart3,
-  PieChart
+  X
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { databaseService } from '@/services/DatabaseService';

@@ -42,6 +42,7 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
+      external: ['@mediapipe/face_detection'], // Mark as external since we use tfjs runtime
       output: {
         manualChunks: {
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],

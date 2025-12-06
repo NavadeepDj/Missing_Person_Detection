@@ -70,7 +70,8 @@ export class EmbeddingService {
           // But ensure it's set here too as a fallback
           if (backend === 'wasm') {
             try {
-              if (!ort.env.wasm.wasmPaths || ort.env.wasm.wasmPaths.includes('node_modules')) {
+              const wasmPaths = ort.env.wasm.wasmPaths;
+              if (!wasmPaths || (typeof wasmPaths === 'string' && wasmPaths.includes('node_modules'))) {
                 ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/';
                 console.log('📡 WASM files will be loaded from CDN');
               }

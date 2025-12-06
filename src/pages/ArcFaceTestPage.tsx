@@ -161,7 +161,7 @@ export default function ArcFaceTestPage() {
     addLog('📊 Calculating cosine similarity...');
     
     try {
-      const sim = MatchingService.calculateSimilarity(emb1, emb2);
+      const sim = MatchingService.calculateSimilarityLocal(emb1, emb2);
       setSimilarity(sim);
       
       // Calculate detailed metrics
