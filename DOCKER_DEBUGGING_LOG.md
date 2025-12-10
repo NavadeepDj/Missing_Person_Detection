@@ -89,9 +89,22 @@ By removing `package-lock.json`, we forced npm to look at the current OS (Linux)
 
 ---
 
-## 4. Understanding the Success Output
+## 4. Frontend: The White Screen (Mediapipe Error)
 
-When you see this at the end:
+### 🔴 The Error
+```
+Uncaught TypeError: Failed to resolve module specifier "@mediapipe/face_detection"
+```
+
+### 🧐 Why it Happened
+In `vite.config.ts`, the line `external: ['@mediapipe/face_detection']` was telling the bundler **"Don't include this library, I'll provide it later."**
+But we didn't provide it later (e.g., via CDN), so when the browser tried to run the app, it crashed looking for that missing piece.
+
+### ✅ The Fix
+1.  **Install it**: We added `"@mediapipe/face_detection": "^0.4..."` to `package.json`.
+2.  **Bundle it**: We commented out the `external` line in `vite.config.ts` so Vite actually includes it in the app.
+
+Now the browser doesn't need to look for it; it's already there.
 
 ```
 [+] Building 54.2s (27/27) FINISHED

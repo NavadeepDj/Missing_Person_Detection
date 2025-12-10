@@ -34,20 +34,20 @@ export default defineConfig({
       // the browser runtime). This forces imports of `long` to use the
       // prebuilt UMD file.
       "long": path.resolve(__dirname, "./node_modules/long/dist/long.js"),
-  // Serve the browser-safe UMD/minified build of seedrandom instead of
-  // the CommonJS `index.js` which uses `require`/`module.exports` and
-  // crashes in the browser runtime.
-  "seedrandom": path.resolve(__dirname, "./node_modules/seedrandom/seedrandom.min.js"),
+      // Serve the browser-safe UMD/minified build of seedrandom instead of
+      // the CommonJS `index.js` which uses `require`/`module.exports` and
+      // crashes in the browser runtime.
+      "seedrandom": path.resolve(__dirname, "./node_modules/seedrandom/seedrandom.min.js"),
     },
   },
   build: {
     rollupOptions: {
-      external: ['@mediapipe/face_detection'], // Mark as external since we use tfjs runtime
+      // external: ['@mediapipe/face_detection'], // Commented out to ensure it gets bundled
       output: {
         manualChunks: {
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
           'ui-vendor': ['framer-motion', 'lucide-react'],
-          'tensorflow': ['@tensorflow/tfjs', '@tensorflow/tfjs-converter', '@tensorflow-models/face-detection'],
+          'tensorflow': ['@tensorflow/tfjs', '@tensorflow/tfjs-converter', '@tensorflow-models/face-detection', '@mediapipe/face_detection'],
         },
       },
     },

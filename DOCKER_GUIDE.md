@@ -53,7 +53,7 @@ VITE_SUPABASE_ANON_KEY=your_supabase_key_here
 docker-compose up
 ```
 
-**That's it!** The app will be available at: `http://localhost:3000`
+**That's it!** The app will be available at: `http://localhost:5173`
 
 ### Step 3: Stop the Container
 
@@ -125,14 +125,14 @@ docker ps
 - Check system tray for Docker icon
 - Restart Docker Desktop
 
-### Problem: "Port 3000 already in use"
+### Problem: "Port 5173 already in use"
 **Solution:**
 - Change port in `docker-compose.yml`:
   ```yaml
   ports:
-    - "3001:80"  # Use port 3001 instead
+    - "5174:80"  # Use port 5174 instead
   ```
-- Or stop the application using port 3000
+- Or stop the application using port 5173
 
 ### Problem: "Build fails"
 **Solution:**
@@ -167,7 +167,7 @@ docker ps
 1. **Builds** your React app (runs `npm install` and `npm run build`)
 2. **Packages** everything in a container
 3. **Serves** it with nginx (production-ready web server)
-4. **Exposes** it on port 3000 (or 5173 for dev)
+4. **Exposes** it on port 5173 (or 5173 for dev)
 
 ---
 

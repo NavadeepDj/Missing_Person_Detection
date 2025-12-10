@@ -450,6 +450,18 @@ export class DatabaseService {
     }): Promise<{ id: string; success: boolean; error?: string }> {
         const { caseId, similarity, sourceRole, latitude, longitude, photoUrl, personName } = params;
 
+        // DEBUG: Log incoming GPS values
+        console.log('🚨 createAlert called with FULL params:', params);
+        console.log('🚨 createAlert GPS values:', {
+            latitude,
+            longitude,
+            latitudeType: typeof latitude,
+            longitudeType: typeof longitude,
+            latitudeValue: latitude,
+            longitudeValue: longitude,
+            bothAreNumbers: typeof latitude === 'number' && typeof longitude === 'number'
+        });
+
         try {
             const metadata: any = {
                 similarity,
@@ -463,7 +475,15 @@ export class DatabaseService {
             if (typeof latitude === 'number' && typeof longitude === 'number') {
                 metadata.latitude = latitude;
                 metadata.longitude = longitude;
+                console.log('✅ GPS added to metadata:', { latitude, longitude });
+            } else {
+                console.warn('⚠️ GPS NOT added to metadata - not numbers!');
             }
+
+            const locationString = typeof latitude === 'number' && typeof longitude === 'number'
+                ? `${latitude},${longitude}`
+                : null;
+            console.log('🚨 location field will be:', locationString);
 
             const { data, error } = await this.supabase
                 .from('alerts')
@@ -473,10 +493,7 @@ export class DatabaseService {
                         similarity,
                         source_role: sourceRole,
                         photo_url: photoUrl || null,
-                        location:
-                            typeof latitude === 'number' && typeof longitude === 'number'
-                                ? `${latitude},${longitude}`
-                                : null,
+                        location: locationString,
                         status: 'pending', // Initial status: pending admin review
                         metadata,
                     },

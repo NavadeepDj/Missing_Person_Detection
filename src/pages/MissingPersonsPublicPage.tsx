@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { FaceProcessingService } from '@/services/FaceProcessingService';
 import { databaseService } from '@/services/DatabaseService';
 
-import { AlertTriangle, CheckCircle, Camera, Upload } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Camera, Upload, MapPin } from 'lucide-react';
 
 interface MissingCase {
   id: string;
@@ -57,6 +57,7 @@ export function MissingPersonsPublicPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isWebcamActive, setIsWebcamActive] = useState(false);
   const [isVideoReady, setIsVideoReady] = useState(false);
+  const [gpsPermissionStatus, setGpsPermissionStatus] = useState<'unknown' | 'granted' | 'denied'>('unknown');
 
   useEffect(() => {
     const loadCases = async () => {
@@ -132,7 +133,7 @@ export function MissingPersonsPublicPage() {
       // Set webcam active first so the video element is rendered
       setIsWebcamActive(true);
       setIsVideoReady(false);
-      
+
       // Wait a bit to ensure video element is rendered in DOM
       await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -146,10 +147,10 @@ export function MissingPersonsPublicPage() {
       });
 
       console.log('✅ Camera access granted, attaching stream to video element...');
-      
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        
+
         videoRef.current.onloadedmetadata = () => {
           console.log('📺 Video metadata loaded');
           videoRef.current?.play().then(() => {
@@ -253,20 +254,20 @@ export function MissingPersonsPublicPage() {
       // Set canvas dimensions to match video
       canvasRef.current.width = videoRef.current.videoWidth;
       canvasRef.current.height = videoRef.current.videoHeight;
-      
+
       // Draw video frame to canvas (mirror it back for correct orientation)
       context.save();
       context.scale(-1, 1);
       context.drawImage(videoRef.current, -canvasRef.current.width, 0);
       context.restore();
-      
+
       const photoUrl = canvasRef.current.toDataURL('image/jpeg', 0.95);
       console.log('✅ Photo captured successfully', {
         width: canvasRef.current.width,
         height: canvasRef.current.height,
         dataUrlLength: photoUrl.length
       });
-      
+
       stopWebcam();
       // Process the captured photo
       processPhotoFromCamera(photoUrl);
@@ -416,6 +417,7 @@ export function MissingPersonsPublicPage() {
         console.log(`✅ Match found! Case: ${bestMatch.personId}, Similarity: ${(bestMatch.similarity * 100).toFixed(1)}%`);
 
         // Create alert in database with GPS location
+        console.log('🔍 BEFORE createAlert - GPS values:', { latitude, longitude, latType: typeof latitude, lngType: typeof longitude });
         await databaseService.createAlert({
           caseId: bestMatch.personId,
           similarity: bestMatch.similarity,
@@ -504,9 +506,9 @@ export function MissingPersonsPublicPage() {
             const expectedPrefix = file.type === 'image/jpeg' || file.name.toLowerCase().endsWith('.jpg') || file.name.toLowerCase().endsWith('.jpeg')
               ? 'data:image/jpeg'
               : file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')
-              ? 'data:image/png'
-              : `data:${file.type}`;
-            
+                ? 'data:image/png'
+                : `data:${file.type}`;
+
             if (!result.startsWith(expectedPrefix)) {
               console.warn('⚠️ Data URL prefix mismatch!', {
                 expected: expectedPrefix,
@@ -515,7 +517,7 @@ export function MissingPersonsPublicPage() {
                 fileType: file.type
               });
             }
-            
+
             console.log('✅ File read successfully. Data URL prefix:', result.substring(0, 50) + '...');
             resolve(result);
           } else {
@@ -542,10 +544,10 @@ export function MissingPersonsPublicPage() {
       }
 
       const queryEmbedding = processResult.embedding;
-      
+
       // Check if this is likely a mock embedding (low confidence indicates mock)
       const isLikelyMock = processResult.confidence < 0.9;
-      
+
       console.log('✅ Generated embedding from uploaded photo:', {
         sourceFile: fileMetadata.name,
         fileType: fileMetadata.type,
@@ -555,7 +557,7 @@ export function MissingPersonsPublicPage() {
         confidence: processResult.confidence,
         modelStatus: isLikelyMock ? '⚠️ MOCK (low confidence)' : '✅ REAL MODEL'
       });
-      
+
       if (isLikelyMock) {
         console.error('❌❌❌ WARNING: Embedding appears to be from MOCK, not real ArcFace model!');
         console.error('❌ Confidence is', processResult.confidence, '(expected > 0.9 for real model)');
@@ -563,14 +565,14 @@ export function MissingPersonsPublicPage() {
         console.error('❌ Check browser console for model loading errors');
         console.error('❌ Verify /models/arcface.onnx is accessible');
       }
-      
+
       // Calculate embedding statistics for debugging
       const queryNorm = Math.sqrt(queryEmbedding.reduce((sum, val) => sum + val * val, 0));
       const queryMin = Math.min(...queryEmbedding);
       const queryMax = Math.max(...queryEmbedding);
       const queryAvg = queryEmbedding.reduce((sum, val) => sum + val, 0) / queryEmbedding.length;
       const isNormalized = Math.abs(queryNorm - 1.0) < 0.01; // Check if norm is close to 1.0
-      
+
       console.log('📊 Embedding statistics:', {
         dimensions: queryEmbedding.length,
         norm: queryNorm.toFixed(6),
@@ -623,7 +625,7 @@ export function MissingPersonsPublicPage() {
 
       for (const knownFace of knownFaces) {
         const storedEmbedding = knownFace.embedding;
-        
+
         // Calculate detailed similarity metrics
         let dotProduct = 0.0;
         let norm1 = 0.0;
@@ -694,7 +696,7 @@ export function MissingPersonsPublicPage() {
 
       // Filter matches above threshold
       const matches = detailedComparisons.filter(c => c.similarity >= threshold);
-      
+
       // Calculate confidence (same logic as MatchingService)
       const calculateConfidence = (similarity: number, threshold: number): number => {
         if (similarity <= threshold) return 0.0;
@@ -725,8 +727,10 @@ export function MissingPersonsPublicPage() {
 
       // Get browser GPS location (if available) - capture at upload time
       const browserLocation = await getBrowserLocation();
+      console.log('📍 getBrowserLocation returned:', browserLocation);
       const latitude = browserLocation?.latitude;
       const longitude = browserLocation?.longitude;
+      console.log('📍 Extracted GPS values:', { latitude, longitude });
 
       // Store debug info
       setDebugInfo({
@@ -758,6 +762,7 @@ export function MissingPersonsPublicPage() {
         console.log(`✅ Match found! Case: ${bestMatch.personId}, Similarity: ${(bestMatch.similarity * 100).toFixed(1)}%`);
 
         // Create alert in database with person name in metadata
+        console.log('🔍 BEFORE createAlert (file upload) - GPS values:', { latitude, longitude, latType: typeof latitude, lngType: typeof longitude });
         await databaseService.createAlert({
           caseId: bestMatch.personId,
           similarity: bestMatch.similarity,
@@ -773,7 +778,7 @@ export function MissingPersonsPublicPage() {
             ? `Location: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
             : 'Location not available';
 
-        const cosineDetails = bestComparison 
+        const cosineDetails = bestComparison
           ? `\nCosine Similarity Details:\n- Dot Product: ${bestComparison.dotProduct.toFixed(6)}\n- Query Norm: ${bestComparison.norm1.toFixed(6)}\n- Stored Norm: ${bestComparison.norm2.toFixed(6)}\n- Cosine = ${bestComparison.dotProduct.toFixed(6)} / (${bestComparison.norm1.toFixed(6)} × ${bestComparison.norm2.toFixed(6)}) = ${bestMatch.similarity.toFixed(6)}`
           : '';
 
@@ -783,9 +788,9 @@ export function MissingPersonsPublicPage() {
       } else {
         // No match above threshold
         console.log(`❌ No match found above ${(threshold * 100).toFixed(0)}% threshold`);
-        
+
         const bestComparison = detailedComparisons[0]; // Already sorted by similarity
-        
+
         const cosineDetails = bestComparison
           ? `\nClosest Match Details:\n- Case: ${bestComparison.caseId} (${bestComparison.name})\n- Cosine Similarity: ${bestComparison.similarity.toFixed(6)} (${(bestComparison.similarity * 100).toFixed(2)}%)\n- Dot Product: ${bestComparison.dotProduct.toFixed(6)}\n- Query Norm: ${bestComparison.norm1.toFixed(6)}\n- Stored Norm: ${bestComparison.norm2.toFixed(6)}`
           : '';
@@ -825,7 +830,7 @@ export function MissingPersonsPublicPage() {
             <CardTitle>Active Missing Persons</CardTitle>
             <CardDescription>
               If you recognize someone in this list, click <span className="font-semibold">Report
-              Sighting</span> on their card, then upload a clear photo of the person you see. The
+                Sighting</span> on their card, then upload a clear photo of the person you see. The
               system will compare it with that specific missing person and send an alert to admins.
             </CardDescription>
           </CardHeader>
@@ -899,6 +904,16 @@ export function MissingPersonsPublicPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
+              {/* GPS Permission Warning */}
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+                <div className="flex items-start">
+                  <MapPin className="h-5 w-5 text-amber-600 mt-0.5 mr-2 flex-shrink-0" />
+                  <div className="text-sm text-amber-800">
+                    <strong>📍 Location Access Important:</strong> Please allow location access when prompted by your browser.
+                    This helps field officers find the person quickly. Without GPS,  alerts can't show where the person was seen.
+                  </div>
+                </div>
+              </div>
               {selectedCase && (
                 <div className="text-sm text-gray-700 bg-blue-50 border border-blue-200 rounded-md p-2">
                   <span className="font-semibold">Note:</span> You selected case{' '}
@@ -972,8 +987,8 @@ export function MissingPersonsPublicPage() {
                   </div>
                 </div>
                 <div className="flex justify-center mt-4 space-x-2">
-                  <Button 
-                    onClick={capturePhoto} 
+                  <Button
+                    onClick={capturePhoto}
                     className="bg-blue-600 hover:bg-blue-700"
                     disabled={!isVideoReady || isUploading}
                   >
@@ -1011,140 +1026,139 @@ export function MissingPersonsPublicPage() {
                 </div>
               )}
 
-                {matchError && (
-                  <div className="border border-red-200 bg-red-50 text-red-800 text-xs rounded-md p-3">
-                    <div className="font-semibold mb-1">❌ Error:</div>
-                    <div>{matchError}</div>
-                  </div>
-                )}
+              {matchError && (
+                <div className="border border-red-200 bg-red-50 text-red-800 text-xs rounded-md p-3">
+                  <div className="font-semibold mb-1">❌ Error:</div>
+                  <div>{matchError}</div>
+                </div>
+              )}
 
-                {!isUploading && debugInfo?.processResult && debugInfo.processResult.confidence < 0.9 && (
-                  <div className="border border-red-300 bg-red-100 text-red-900 text-xs rounded-md p-3">
-                    <div className="font-semibold mb-1">⚠️ WARNING: Using MOCK Embeddings!</div>
-                    <div className="space-y-1">
-                      <div>• The ArcFace model may not be loaded correctly</div>
-                      <div>• All images will produce similar embeddings</div>
-                      <div>• Check browser console (F12) for model loading errors</div>
-                      <div>• Verify /models/arcface.onnx exists in public/models/</div>
-                      <div>• Confidence: {debugInfo.processResult.confidence} (expected &gt; 0.9 for real model)</div>
-                    </div>
+              {!isUploading && debugInfo?.processResult && debugInfo.processResult.confidence < 0.9 && (
+                <div className="border border-red-300 bg-red-100 text-red-900 text-xs rounded-md p-3">
+                  <div className="font-semibold mb-1">⚠️ WARNING: Using MOCK Embeddings!</div>
+                  <div className="space-y-1">
+                    <div>• The ArcFace model may not be loaded correctly</div>
+                    <div>• All images will produce similar embeddings</div>
+                    <div>• Check browser console (F12) for model loading errors</div>
+                    <div>• Verify /models/arcface.onnx exists in public/models/</div>
+                    <div>• Confidence: {debugInfo.processResult.confidence} (expected &gt; 0.9 for real model)</div>
                   </div>
-                )}
+                </div>
+              )}
 
-                {matchMessage && (
-                  <div
-                    className={`border text-xs rounded-md p-3 flex items-start space-x-2 ${
-                      matchMessage.includes('MATCH FOUND')
-                        ? 'border-green-200 bg-green-50 text-green-800'
-                        : 'border-yellow-200 bg-yellow-50 text-yellow-800'
+              {matchMessage && (
+                <div
+                  className={`border text-xs rounded-md p-3 flex items-start space-x-2 ${matchMessage.includes('MATCH FOUND')
+                    ? 'border-green-200 bg-green-50 text-green-800'
+                    : 'border-yellow-200 bg-yellow-50 text-yellow-800'
                     }`}
-                  >
-                    {matchMessage.includes('MATCH FOUND') ? (
-                      <CheckCircle className="h-4 w-4 mt-0.5 text-green-600" />
-                    ) : (
-                      <AlertTriangle className="h-4 w-4 mt-0.5" />
-                    )}
-                    <div className="flex-1">
-                      <pre className="whitespace-pre-wrap font-sans">{matchMessage}</pre>
-                    </div>
+                >
+                  {matchMessage.includes('MATCH FOUND') ? (
+                    <CheckCircle className="h-4 w-4 mt-0.5 text-green-600" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 mt-0.5" />
+                  )}
+                  <div className="flex-1">
+                    <pre className="whitespace-pre-wrap font-sans">{matchMessage}</pre>
                   </div>
-                )}
+                </div>
+              )}
 
-                {debugInfo && (
-                  <div className="border border-blue-200 bg-blue-50 rounded-md p-3 space-y-3">
-                    <div className="text-xs font-semibold text-blue-900">🔍 Debugging Information</div>
-                    
-                    {debugInfo.fileMetadata && (
+              {debugInfo && (
+                <div className="border border-blue-200 bg-blue-50 rounded-md p-3 space-y-3">
+                  <div className="text-xs font-semibold text-blue-900">🔍 Debugging Information</div>
+
+                  {debugInfo.fileMetadata && (
+                    <div className="text-xs">
+                      <div className="font-semibold text-blue-800 mb-1">📁 Processed File:</div>
+                      <div className="bg-white rounded p-2 font-mono text-[10px]">
+                        <div><strong>Name:</strong> {debugInfo.fileMetadata.name}</div>
+                        <div><strong>Type:</strong> {debugInfo.fileMetadata.type}</div>
+                        <div><strong>Extension:</strong> {debugInfo.fileMetadata.extension || 'N/A'}</div>
+                        <div><strong>Size:</strong> {(debugInfo.fileMetadata.size / 1024).toFixed(2)} KB</div>
+                        <div><strong>Last Modified:</strong> {new Date(debugInfo.fileMetadata.lastModified).toLocaleString()}</div>
+                        <div><strong>File Hash:</strong> {debugInfo.fileMetadata.hash || 'N/A'}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {debugInfo.processResult && (
+                    <div className="text-xs">
+                      <div className="font-semibold text-blue-800 mb-1">Model Status:</div>
+                      <div className={`rounded p-2 font-mono text-[10px] ${debugInfo.processResult.confidence >= 0.9 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                        <div>Confidence: <span className={debugInfo.processResult.confidence >= 0.9 ? 'text-green-700 font-bold' : 'text-red-700 font-bold'}>{debugInfo.processResult.confidence}</span> {debugInfo.processResult.confidence >= 0.9 ? <span className="text-green-600">✓ Real Model</span> : <span className="text-red-600">✗ Mock (Fallback)</span>}</div>
+                        <div>Processing Time: {debugInfo.processResult.processingTime?.toFixed(0) || 'N/A'}ms</div>
+                        {debugInfo.processResult.confidence < 0.9 && (
+                          <div className="text-red-700 mt-1">⚠️ Using mock embeddings - all images will be similar!</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {debugInfo.uploadedEmbedding && (() => {
+                    const norm = Math.sqrt(debugInfo.uploadedEmbedding.reduce((sum, v) => sum + v * v, 0));
+                    const isNormalized = Math.abs(norm - 1.0) < 0.01;
+                    return (
                       <div className="text-xs">
-                        <div className="font-semibold text-blue-800 mb-1">📁 Processed File:</div>
-                        <div className="bg-white rounded p-2 font-mono text-[10px]">
-                          <div><strong>Name:</strong> {debugInfo.fileMetadata.name}</div>
-                          <div><strong>Type:</strong> {debugInfo.fileMetadata.type}</div>
-                          <div><strong>Extension:</strong> {debugInfo.fileMetadata.extension || 'N/A'}</div>
-                          <div><strong>Size:</strong> {(debugInfo.fileMetadata.size / 1024).toFixed(2)} KB</div>
-                          <div><strong>Last Modified:</strong> {new Date(debugInfo.fileMetadata.lastModified).toLocaleString()}</div>
-                          <div><strong>File Hash:</strong> {debugInfo.fileMetadata.hash || 'N/A'}</div>
+                        <div className="font-semibold text-blue-800 mb-1">Uploaded Photo Embedding:</div>
+                        <div className="bg-white rounded p-2 font-mono text-[10px] overflow-x-auto">
+                          <div>Dimensions: {debugInfo.uploadedEmbedding.length}</div>
+                          <div>Norm: {norm.toFixed(6)} {isNormalized ? <span className="text-green-600">✓ Normalized</span> : <span className="text-red-600">✗ Not normalized (expected ~1.0)</span>}</div>
+                          <div>Min: {Math.min(...debugInfo.uploadedEmbedding).toFixed(6)}, Max: {Math.max(...debugInfo.uploadedEmbedding).toFixed(6)}</div>
+                          <div>First 20 values: [{debugInfo.uploadedEmbedding.slice(0, 20).map(v => v.toFixed(4)).join(', ')}...]</div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="mt-2 text-[10px] h-6"
+                            onClick={() => {
+                              navigator.clipboard.writeText(JSON.stringify(debugInfo.uploadedEmbedding));
+                              alert('Embedding copied to clipboard!');
+                            }}
+                          >
+                            Copy Full Embedding JSON
+                          </Button>
                         </div>
                       </div>
-                    )}
-                    
-                    {debugInfo.processResult && (
-                      <div className="text-xs">
-                        <div className="font-semibold text-blue-800 mb-1">Model Status:</div>
-                        <div className={`rounded p-2 font-mono text-[10px] ${debugInfo.processResult.confidence >= 0.9 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                          <div>Confidence: <span className={debugInfo.processResult.confidence >= 0.9 ? 'text-green-700 font-bold' : 'text-red-700 font-bold'}>{debugInfo.processResult.confidence}</span> {debugInfo.processResult.confidence >= 0.9 ? <span className="text-green-600">✓ Real Model</span> : <span className="text-red-600">✗ Mock (Fallback)</span>}</div>
-                          <div>Processing Time: {debugInfo.processResult.processingTime?.toFixed(0) || 'N/A'}ms</div>
-                          {debugInfo.processResult.confidence < 0.9 && (
-                            <div className="text-red-700 mt-1">⚠️ Using mock embeddings - all images will be similar!</div>
-                          )}
-                        </div>
-                      </div>
-                    )}
+                    );
+                  })()}
 
-                    {debugInfo.uploadedEmbedding && (() => {
-                      const norm = Math.sqrt(debugInfo.uploadedEmbedding.reduce((sum, v) => sum + v * v, 0));
-                      const isNormalized = Math.abs(norm - 1.0) < 0.01;
-                      return (
-                        <div className="text-xs">
-                          <div className="font-semibold text-blue-800 mb-1">Uploaded Photo Embedding:</div>
-                          <div className="bg-white rounded p-2 font-mono text-[10px] overflow-x-auto">
-                            <div>Dimensions: {debugInfo.uploadedEmbedding.length}</div>
-                            <div>Norm: {norm.toFixed(6)} {isNormalized ? <span className="text-green-600">✓ Normalized</span> : <span className="text-red-600">✗ Not normalized (expected ~1.0)</span>}</div>
-                            <div>Min: {Math.min(...debugInfo.uploadedEmbedding).toFixed(6)}, Max: {Math.max(...debugInfo.uploadedEmbedding).toFixed(6)}</div>
-                            <div>First 20 values: [{debugInfo.uploadedEmbedding.slice(0, 20).map(v => v.toFixed(4)).join(', ')}...]</div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="mt-2 text-[10px] h-6"
-                              onClick={() => {
-                                navigator.clipboard.writeText(JSON.stringify(debugInfo.uploadedEmbedding));
-                                alert('Embedding copied to clipboard!');
-                              }}
-                            >
-                              Copy Full Embedding JSON
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    {debugInfo.comparisons && debugInfo.comparisons.length > 0 && (
-                      <div className="text-xs">
-                        <div className="font-semibold text-blue-800 mb-1">All Comparisons (sorted by similarity):</div>
-                        <div className="bg-white rounded p-2 space-y-1 max-h-48 overflow-y-auto">
-                          {debugInfo.comparisons.map((comp, idx) => {
-                            const queryNormOk = Math.abs(comp.norm1 - 1.0) < 0.01;
-                            const storedNormOk = Math.abs(comp.norm2 - 1.0) < 0.01;
-                            return (
-                              <div key={comp.caseId} className="border-b border-gray-200 pb-1 last:border-0">
-                                <div className="font-mono text-[10px]">
-                                  <div className="font-semibold">{idx + 1}. {comp.name} ({comp.caseId})</div>
-                                  <div className="pl-2 text-gray-700">
-                                    Cosine Similarity: <span className="font-bold">{comp.similarity.toFixed(6)}</span> ({((comp.similarity) * 100).toFixed(2)}%)
-                                  </div>
-                                  <div className="pl-2 text-gray-600">
-                                    Dot Product: {comp.dotProduct.toFixed(6)}
-                                  </div>
-                                  <div className="pl-2 text-gray-600">
-                                    Query Norm: {comp.norm1.toFixed(6)} {queryNormOk ? <span className="text-green-600">✓</span> : <span className="text-red-600">✗</span>} | 
-                                    Stored Norm: {comp.norm2.toFixed(6)} {storedNormOk ? <span className="text-green-600">✓</span> : <span className="text-red-600">✗</span>}
-                                  </div>
-                                  <div className="pl-2 text-gray-500 text-[9px]">
-                                    Formula: cos(θ) = {comp.dotProduct.toFixed(4)} / ({comp.norm1.toFixed(4)} × {comp.norm2.toFixed(4)}) = {comp.similarity.toFixed(6)}
-                                  </div>
+                  {debugInfo.comparisons && debugInfo.comparisons.length > 0 && (
+                    <div className="text-xs">
+                      <div className="font-semibold text-blue-800 mb-1">All Comparisons (sorted by similarity):</div>
+                      <div className="bg-white rounded p-2 space-y-1 max-h-48 overflow-y-auto">
+                        {debugInfo.comparisons.map((comp, idx) => {
+                          const queryNormOk = Math.abs(comp.norm1 - 1.0) < 0.01;
+                          const storedNormOk = Math.abs(comp.norm2 - 1.0) < 0.01;
+                          return (
+                            <div key={comp.caseId} className="border-b border-gray-200 pb-1 last:border-0">
+                              <div className="font-mono text-[10px]">
+                                <div className="font-semibold">{idx + 1}. {comp.name} ({comp.caseId})</div>
+                                <div className="pl-2 text-gray-700">
+                                  Cosine Similarity: <span className="font-bold">{comp.similarity.toFixed(6)}</span> ({((comp.similarity) * 100).toFixed(2)}%)
+                                </div>
+                                <div className="pl-2 text-gray-600">
+                                  Dot Product: {comp.dotProduct.toFixed(6)}
+                                </div>
+                                <div className="pl-2 text-gray-600">
+                                  Query Norm: {comp.norm1.toFixed(6)} {queryNormOk ? <span className="text-green-600">✓</span> : <span className="text-red-600">✗</span>} |
+                                  Stored Norm: {comp.norm2.toFixed(6)} {storedNormOk ? <span className="text-green-600">✓</span> : <span className="text-red-600">✗</span>}
+                                </div>
+                                <div className="pl-2 text-gray-500 text-[9px]">
+                                  Formula: cos(θ) = {comp.dotProduct.toFixed(4)} / ({comp.norm1.toFixed(4)} × {comp.norm2.toFixed(4)}) = {comp.similarity.toFixed(6)}
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    )}
-
-                    <div className="text-[10px] text-blue-700">
-                      💾 Uploaded embedding also stored in browser localStorage as 'last_uploaded_embedding' for cross-checking.
                     </div>
+                  )}
+
+                  <div className="text-[10px] text-blue-700">
+                    💾 Uploaded embedding also stored in browser localStorage as 'last_uploaded_embedding' for cross-checking.
                   </div>
-                )}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
